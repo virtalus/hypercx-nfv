@@ -120,19 +120,19 @@ EOT
     done
 }
 
-reload_service() {
-    service keepalived reload
-}
-
-(
 
 echo "=========================VRRP========================" >> /etc/motd
+if [ -n "${VROUTER_KEEPALIVED_ID}" ] && [ -n "${VROUTER_KEEPALIVED_PASSWORD}" ]; then
+    systemctl stop keepalived
 
-gen_group
-gen_instances
-
-) > /etc/keepalived/keepalived.conf
-
-if [ "$1" == "reload" ]; then
-    reload_service
+    (
+    gen_group
+    gen_instances
+    ) > /etc/keepalived/keepalived.conf
+    
+    echo "Keepalived ENABLED" >> /etc/motd
+    systemctl start keepalived
+else
+    echo "Keepalived DISABLED. Keepalived_ID or Keepalived_Password not set" >> /etc/motd
 fi
+

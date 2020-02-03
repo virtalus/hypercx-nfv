@@ -10,14 +10,14 @@ stop_openvpn()
     systemctl stop openvpn@server
 }
 
-configure_easyrsa()
-{
-    mkdir -p /etc/openvpn/pki
-    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch init-pki
-    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch build-ca nopass
-    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch gen-req HyperCX nopass
-    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch sign-req server HyperCX
-}
+#configure_easyrsa()
+#{
+#    mkdir -p /etc/openvpn/pki
+#    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch init-pki
+#    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch build-ca nopass
+#    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch gen-req HyperCX nopass
+#    /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch sign-req server HyperCX
+#}
 
 create_openvpn_client()
 {
@@ -35,17 +35,17 @@ create_openvpn_client()
 
 configure_openvpn()
 {
-    if [ ! -f /etc/openvpn/pki/ca.crt ]; then
-        configure_easyrsa
-    fi
-
-    if [ ! -f /etc/openvpn/dh2048.pem ]; then
-        openssl dhparam -out /etc/openvpn/dh2048.pem 2048
-    fi
-
-    if [ ! -f /etc/openvpn/ta.key ]; then
-        openvpn --genkey --secret /etc/openvpn/ta.key
-    fi
+#    if [ ! -f /etc/openvpn/pki/ca.crt ]; then
+#        configure_easyrsa
+#    fi
+#
+#    if [ ! -f /etc/openvpn/dh2048.pem ]; then
+#        openssl dhparam -out /etc/openvpn/dh2048.pem 2048
+#    fi
+#
+#    if [ ! -f /etc/openvpn/ta.key ]; then
+#        openvpn --genkey --secret /etc/openvpn/ta.key
+#    fi
 
     #Generate part of openvpn conf that is common with the client conf
     cat > /etc/openvpn/server.conf <<EOF
@@ -58,7 +58,7 @@ verb 3
 explicit-exit-notify 1
 EOF
 
-    for credential in $(echo $VPN_USERS); do
+    for credential in $(echo $VPN_CREDENTIALS); do
         user=$(echo $credential | cut -d ':' -f 1)
         pass=$(echo $credential | cut -d ':' -f 2 | base64)
         echo "$user $pass" >> /etc/openvpn/vpn_users
@@ -99,6 +99,10 @@ get_first_interface_ipv4() {
     env | grep -E "^ETH0+_IP=" | cut -d '=' -f 2
 }
 
+get_first_interface_floating_ipv4() {
+    env | grep -E "^ETH0+_VROUTER_IP=" | cut -d '=' -f 2
+}
+
 echo "=========================OPENVPN========================" >> /etc/motd
 mkdir -p /root/vpn_config_files
 stop_openvpn
@@ -106,10 +110,15 @@ stop_openvpn
 #Clear existing users
 echo > /etc/openvpn/vpn_users
 if [ -n "${ETH0_MAC}" ]; then
-    ipv4="$(get_first_interface_ipv4)"
-    ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+    if [ -n "${ETH0_VROUTER_IP}" ]; then
+        ipv4="$(get_first_interface_floating_ipv4)"
+        ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+    else
+        ipv4="$(get_first_interface_ipv4)"
+        ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+    fi
     if [ -z "${ipv4_private}" ]; then
-        if [ -n "${VPN_USERS}" ]; then
+        if [ -n "${VPN_CREDENTIALS}" ]; then
             echo "OpenVPN ENABLED." >> /etc/motd
             configure_openvpn $ipv4
             start_openvpn
