@@ -123,6 +123,8 @@ vrrp_instance $interface {
 }
 
 EOT
+        else
+            echo "No floating IP found for interface $interface" >> /etc/motd
         fi
     done
 }
