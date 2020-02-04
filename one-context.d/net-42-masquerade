@@ -29,7 +29,7 @@ create_masquerade(){
         if [ -n "${ipv6}" ]; then
 	        configure_ipv6_masquerade
         else
-            echo "IPV4 MASQUERADE DISABLED" >> /etc/motd
+            echo "IPV6 MASQUERADE DISABLED" >> /etc/motd
         fi
     fi
 }

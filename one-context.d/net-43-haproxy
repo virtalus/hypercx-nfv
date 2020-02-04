@@ -13,6 +13,7 @@ stop_haproxy()
 configure_haproxy()
 {
     if [ -n "${LB_BACKENDS}" ] && [ -n "${LB_PORT}" ]; then
+        stop_haproxy
         echo "LOAD BALANCER ENABLED." >> /etc/motd
         cat > /etc/haproxy/haproxy.cfg <<EOF
 global
@@ -61,10 +62,11 @@ backend servers
 EOF
         add_haproxy_backends
         configure_haproxy_mgmt_auth
+        start_haproxy
 
     else
         echo "LOAD BALANCER DISABLED." >> /etc/motd
-	echo "Load Balancer PORT and BACKEND variables were not found" >> /etc/motd
+	    echo "Load Balancer PORT and BACKEND variables were not found" >> /etc/motd
     fi
 }
 
@@ -105,6 +107,4 @@ EOF
 
 
 echo "=========================LOAD_BALANCER========================" >> /etc/motd
-stop_haproxy
 configure_haproxy
-start_haproxy

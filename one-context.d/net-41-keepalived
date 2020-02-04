@@ -44,6 +44,11 @@ get_vrouter_id() {
         vrouter_id="0"
     fi
 
+    if [ "$vrouter_id" -eq "0" ]; then
+        vrouter_id="$VROUTER_ID"
+        vrouter_id=$(( $vrouter_id & 255 ))
+    fi
+
     echo $vrouter_id
 }
 
@@ -120,9 +125,13 @@ EOT
     done
 }
 
+# skip the script if instance is not Virtual Router
+if [ -z "${VROUTER_ID}" ]; then
+    exit 0
+fi
 
 echo "=========================VRRP========================" >> /etc/motd
-if [ -n "${VROUTER_KEEPALIVED_ID}" ] && [ -n "${VROUTER_KEEPALIVED_PASSWORD}" ]; then
+#if [ -n "${VROUTER_KEEPALIVED_ID}" ] && [ -n "${VROUTER_KEEPALIVED_PASSWORD}" ]; then
     systemctl stop keepalived
 
     (
@@ -132,7 +141,7 @@ if [ -n "${VROUTER_KEEPALIVED_ID}" ] && [ -n "${VROUTER_KEEPALIVED_PASSWORD}" ];
     
     echo "Keepalived ENABLED" >> /etc/motd
     systemctl start keepalived
-else
+#else
     echo "Keepalived DISABLED. Keepalived_ID or Keepalived_Password not set" >> /etc/motd
-fi
+#fi
 
