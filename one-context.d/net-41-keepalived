@@ -102,9 +102,11 @@ EOT
 gen_instances() {
     for interface in $(get_context_interfaces); do
         vrouter_ip=$(get_iface_var $interface VROUTER_IP)
+        vrouter_mask=$(get_iface_var $interface MASK)
         interface_downcase=$(echo $interface | downcase)
 
         if [ -n $vrouter_ip ]; then
+        vrouter_mask_decimal=$(ipcalc $vrouter_ip $vrouter_mask | grep Netmask | awk '{print $4}')
         echo "Interface $interface using floating IP: $vrouter_ip" >> /etc/motd
             cat <<EOT
 vrrp_instance $interface {
@@ -114,7 +116,7 @@ vrrp_instance $interface {
   priority 101
   advert_int 1
   virtual_ipaddress {
-    $vrouter_ip
+    $vrouter_ip/$vrouter_mask_decimal
   }
   $(gen_auth)
   nopreempt
@@ -131,17 +133,12 @@ if [ -z "${VROUTER_ID}" ]; then
 fi
 
 echo "=========================VRRP========================" >> /etc/motd
-#if [ -n "${VROUTER_KEEPALIVED_ID}" ] && [ -n "${VROUTER_KEEPALIVED_PASSWORD}" ]; then
-    systemctl stop keepalived
+systemctl stop keepalived
 
-    (
-    gen_group
-    gen_instances
-    ) > /etc/keepalived/keepalived.conf
-    
-    echo "Keepalived ENABLED" >> /etc/motd
-    systemctl start keepalived
-#else
-    echo "Keepalived DISABLED. Keepalived_ID or Keepalived_Password not set" >> /etc/motd
-#fi
+(
+gen_group
+gen_instances
+) > /etc/keepalived/keepalived.conf
+
+systemctl start keepalived
 
