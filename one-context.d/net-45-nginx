@@ -16,10 +16,9 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
-Site_name=$1
-backend=$@
-mail=$2
-#only_url_request="yes"
+Site_name="$L7_SITE_NAME"
+backend="$L7_BACKENDS"
+mail="$L7_MAIL"
 
 start_nginx () {
     systemctl start nginx
@@ -30,7 +29,7 @@ stop_nginx () {
 }
 
 gen_sites () {
-	if [ -n "$@" ]; then
+	if [ -n "$backend$" ]; then
 		stop_nginx
 		echo "NGINX wiil be configured"
 		echo "#Prx" >> /etc/nginx/sites-available/reverse.conf
@@ -62,11 +61,7 @@ add_backends () {
 	counter=1
 	echo "upstream backends {" >> /etc/nginx/sites-available/reverse.conf	
 	for ip in $(echo $backend); do
-        if [ "$ip" != "$Site_name" ]; then
-		if [ "$ip" != "$mail" ]; then
-			echo "        server $ip max_fails=1 fail_timeout=5;" >> /etc/nginx/sites-available/reverse.conf
-		fi
-	fi
+		echo "        server $ip max_fails=1 fail_timeout=5;" >> /etc/nginx/sites-available/reverse.conf
         counter=$((counter+1))
     done
 	echo "}" >> /etc/nginx/sites-available/reverse.conf
