@@ -16,10 +16,10 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
-destination_ips=
-public_interface=
-source_port=
-destiny_port=
+destination_ips="$DNAT_DESTINATION_IPS"
+public_interface="eth$DNAT_PUBLIC_INTERFACE"
+source_port="$DNAT_SOURCE_PORT"
+destiny_port="$DNAT_DESTINY_PORT"
 
 start_iptables () {
     systemctl start iptables

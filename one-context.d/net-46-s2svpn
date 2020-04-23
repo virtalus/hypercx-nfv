@@ -16,12 +16,12 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
-local_site_ip=$1
-local_networks="$2 10.10.0.0/16"
-remote_site_ip=$3
-remote_networks=$4
+local_site_ip="$S2S_LOCAL_SITE_IP"
+local_networks="$S2S_LOCAL_NETWORKS"
+remote_site_ip="$S2S_REMOTE_SITE_IP"
+remote_networks="$S2S_REMOTE_NETWORKS"
 
-pre_shared_key=be4d42430b7ca5703ea8f5e36139d2b26dd6d8827f736196e63eed81
+pre_shared_key="$S2S_PRE_SHARED_KEY"
 
 p1_algorithm=aes
 p1_key_length=256
@@ -35,7 +35,7 @@ p2_hash=sha2_256
 p2_dh_group=
 p2_lifetime=3600
 
-automatically_ping_host=172.17.50.253
+automatically_ping_host="$S2S_HOST_TO_PING"
 
 start_ipsec () {
     ipsec start
@@ -138,6 +138,7 @@ add_key () {
 }
 
 add_automatic_ping () {
+	if [ -n "$automatically_ping_host" ]; then
 	crontab -l > mycron
 	input=mycron
 	while IFS= read -r line; do
@@ -150,6 +151,7 @@ add_automatic_ping () {
 		echo "*/1 * * * * /bin/ping -c 10 $automatically_ping_host" >> mycron
 		crontab mycron
 		rm -f mycron
+	fi
 	fi
 }
  

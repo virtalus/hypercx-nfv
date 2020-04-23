@@ -29,7 +29,7 @@ stop_nginx () {
 }
 
 gen_sites () {
-	if [ -n "$backend$" ]; then
+	if [ -n "$backend" ]; then
 		stop_nginx
 		echo "NGINX wiil be configured"
 		echo "#Prx" >> /etc/nginx/sites-available/reverse.conf
