@@ -1,0 +1,156 @@
+#!/bin/sh
+
+# -------------------------------------------------------------------------- #
+# Copyright 2010-2016, OpenNebula Systems                                    #
+#                                                                            #
+# Licensed under the Apache License, Version 2.0 (the "License"); you may    #
+# not use this file except in compliance with the License. You may obtain    #
+# a copy of the License at                                                   #
+#                                                                            #
+# http://www.apache.org/licenses/LICENSE-2.0                                 #
+#                                                                            #
+# Unless required by applicable law or agreed to in writing, software        #
+# distributed under the License is distributed on an "AS IS" BASIS,          #
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   #
+# See the License for the specific language governing permissions and        #
+# limitations under the License.                                             #
+#--------------------------------------------------------------------------- #
+
+local_site_ip=$1
+local_networks="$2 10.10.0.0/16"
+remote_site_ip=$3
+remote_networks=$4
+
+pre_shared_key=be4d42430b7ca5703ea8f5e36139d2b26dd6d8827f736196e63eed81
+
+p1_algorithm=aes
+p1_key_length=256
+p1_hash=sha2_256
+p1_dh_group=1024
+p1_lifetime=28800
+
+p2_algorithm=aes
+p2_key_length=256
+p2_hash=sha2_256
+p2_dh_group=
+p2_lifetime=3600
+
+automatically_ping_host=172.17.50.253
+
+start_ipsec () {
+    ipsec start
+}
+
+stop_ipsec () {
+    ipsec stop
+}
+
+restart_ipsec () {
+	ipsec restart
+}
+
+save_default_config () {
+	mv /etc/ipsec.conf /etc/ipsec.conf.bk
+	mv /etc/ipsec.secrets /etc/ipsec.secrets.bk
+}
+
+s2s_vpn () {
+if [ -f /usr/sbin/ipsec ]; then	
+	if [ -n "$local_site_ip" ]; then
+		stop_ipsec
+		echo "VPN S2S will be configured"
+		if [ -f /etc/ipsec.conf.bk ]; then
+			echo "Files already saved"
+		else
+			save_default_config
+		fi
+		cat > /etc/ipsec.conf <<EOF
+# HyperCX IPsec configuration file
+
+# basic configuration
+
+config setup
+	strictcrlpolicy=no
+        uniqueids = yes
+        charondebug="all"
+
+# VPN Connections
+
+conn VPN
+	authby=secret
+	left=%defaultroute
+       	leftid=$local_site_ip
+      	rightid=$remote_site_ip 
+        ike=$p1_algorithm$p1_key_length-$p1_hash-modp$p1_dh_group!
+        esp=$p2_algorithm$p2_key_length-$p2_hash$p2_dh_group!
+        keyingtries=0
+        ikelifetime=$p2_lifetime
+        lifetime=$p1_lifetime
+       	dpddelay=30
+       	dpdtimeout=120
+       	dpdaction=restart
+       	auto=start
+EOF
+
+	add_networks 
+	add_key
+	add_automatic_ping
+	start_ipsec
+
+	else
+		echo "No parameters found"
+	fi
+else
+	echo "VPN ipsec program is not isntalled"
+fi
+}
+
+add_networks () {
+counter=1
+for ip in $(echo $remote_networks); do
+	if [ "$counter" != '1' ]; then
+		echo "# More remote networks" >> /etc/ipsec.conf
+		echo "conn VPN_$counter" >> /etc/ipsec.conf
+		echo "	also=VPN" >> /etc/ipsec.conf
+		echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+	else
+		echo "$local_networks" >> /root/local_network
+		sed -e 's/\s\+/,/g' /root/local_network >> /root/local_networks
+		input=/root/local_networks
+		while IFS= read -r line; do
+		echo "	leftsubnet=$line" >> /etc/ipsec.conf
+		done < "$input"	
+		echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+		rm -f /root/local_network
+		rm -f /root/local_networks
+	fi
+	counter=$((counter+1))
+done
+}
+
+add_key () {
+	if [ -f /etc/ipsec.secrets ]; then
+		rm -f /etc/ipsec.secrets
+		echo " $local_site_ip $remote_site_ip : PSK "$pre_shared_key" " >> /etc/ipsec.secrets
+	else
+		echo " $local_site_ip $remote_site_ip : PSK "$pre_shared_key" " >> /etc/ipsec.secrets
+	fi
+}
+
+add_automatic_ping () {
+	crontab -l > mycron
+	input=mycron
+	while IFS= read -r line; do
+		if [ "$line"  = "*/1 * * * * /bin/ping -c 10 $automatically_ping_host" ]; then
+			temp=1
+		fi
+	done < "$input"
+
+	if [ "$temp" != '1' ]; then	
+		echo "*/1 * * * * /bin/ping -c 10 $automatically_ping_host" >> mycron
+		crontab mycron
+		rm -f mycron
+	fi
+}
+ 
+s2s_vpn

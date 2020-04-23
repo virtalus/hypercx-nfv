@@ -1,0 +1,101 @@
+#!/bin/sh
+
+# -------------------------------------------------------------------------- #
+# Copyright 2010-2016, OpenNebula Systems                                    #
+#                                                                            #
+# Licensed under the Apache License, Version 2.0 (the "License"); you may    #
+# not use this file except in compliance with the License. You may obtain    #
+# a copy of the License at                                                   #
+#                                                                            #
+# http://www.apache.org/licenses/LICENSE-2.0                                 #
+#                                                                            #
+# Unless required by applicable law or agreed to in writing, software        #
+# distributed under the License is distributed on an "AS IS" BASIS,          #
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   #
+# See the License for the specific language governing permissions and        #
+# limitations under the License.                                             #
+#--------------------------------------------------------------------------- #
+
+Site_name=$1
+backend=$@
+mail=$2
+#only_url_request="yes"
+
+start_nginx () {
+    systemctl start nginx
+}
+
+stop_nginx () {
+    systemctl stop nginx
+}
+
+gen_sites () {
+	if [ -n "$@" ]; then
+		stop_nginx
+		echo "NGINX wiil be configured"
+		echo "#Prx" >> /etc/nginx/sites-available/reverse.conf
+		cat > /etc/nginx/sites-available/reverse.conf <<EOF
+# $Site_name
+
+server {
+       	listen 80;
+	server_name $Site_name;
+
+       	location / {
+               	proxy_pass http://backends;
+       	}
+}	
+
+EOF
+
+	add_backends 
+	enable_site
+	start_nginx
+	add_certificate
+
+	else
+		echo "No parameters found"
+	fi
+}
+
+add_backends () {
+	counter=1
+	echo "upstream backends {" >> /etc/nginx/sites-available/reverse.conf	
+	for ip in $(echo $backend); do
+        if [ "$ip" != "$Site_name" ]; then
+		if [ "$ip" != "$mail" ]; then
+			echo "        server $ip max_fails=1 fail_timeout=5;" >> /etc/nginx/sites-available/reverse.conf
+		fi
+	fi
+        counter=$((counter+1))
+    done
+	echo "}" >> /etc/nginx/sites-available/reverse.conf
+}
+
+enable_site () {
+	if [ -f /etc/nginx/sites-enabled/reverse.conf ]; then 
+	echo "The site is already enabled"
+else
+	ln -s /etc/nginx/sites-available/reverse.conf /etc/nginx/sites-enabled/reverse.conf
+fi
+}
+
+add_certificate () {
+	/usr/local/letsencrypt/./letsencrypt-auto --nginx -d $Site_name --non-interactive --agree-tos -m $mail
+
+	crontab -l > mycron
+	input=mycron
+	while IFS= read -r line; do
+		if [ "$line"  = "0 1 1 */2 * cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --nginx --renew-by-default --nginx -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" ]; then
+			temp=1
+		fi
+	done < "$input"
+
+	if [ "$temp" != '1' ]; then	
+		echo "0 1 1 */2 * cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --nginx --renew-by-default --nginx -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" >> mycron
+		crontab mycron
+		rm -f mycron
+	fi
+}
+
+gen_sites

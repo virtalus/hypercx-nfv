@@ -1,0 +1,112 @@
+#!/bin/sh
+
+# -------------------------------------------------------------------------- #
+# Copyright 2010-2016, OpenNebula Systems                                    #
+#                                                                            #
+# Licensed under the Apache License, Version 2.0 (the "License"); you may    #
+# not use this file except in compliance with the License. You may obtain    #
+# a copy of the License at                                                   #
+#                                                                            #
+# http://www.apache.org/licenses/LICENSE-2.0                                 #
+#                                                                            #
+# Unless required by applicable law or agreed to in writing, software        #
+# distributed under the License is distributed on an "AS IS" BASIS,          #
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   #
+# See the License for the specific language governing permissions and        #
+# limitations under the License.                                             #
+#--------------------------------------------------------------------------- #
+
+destination_ips=
+public_interface=
+source_port=
+destiny_port=
+
+start_iptables () {
+    systemctl start iptables
+}
+
+stop_iptables () {
+    systemctl stop iptables
+}
+
+restart_iptables () {
+    systemctl restart iptables
+}
+
+dnat_filter () {
+	if [ -f /sbin/iptables ]; then
+		stop_iptables
+		echo "Iptables will be configured"
+		cat > /etc/iptables/iptables.rules <<EOF
+# HyperCX Iptables configuration file
+
+*filter
+:INPUT DROP
+:FORWARD ACCEPT
+:OUTPUT ACCEPT
+-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp -m tcp --dport 80 -j ACCEPT
+-A INPUT -p tcp -m tcp --dport 443 -j ACCEPT
+-A INPUT -p tcp -m tcp --dport 500 -j ACCEPT	# VPN IPsec port
+-A INPUT -p tcp -m tcp --dport 4500 -j ACCEPT	# VPN IPsec port
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -p udp -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A OUTPUT -p icmp -j ACCEPT
+EOF
+
+	allow_ports
+	dnat_nat
+	start_iptables
+	
+	else
+		echo "Nothing to do"
+	fi
+}
+
+allow_ports () {
+	counter=1
+	if [ -n "$source_port" ]; then
+		for ports in $(echo $source_port); do
+			if [ "$ports" != '22' && "$ports" != '80' && "$ports" != '443' && "$ports" != '500' && "$ports" != '4500' ]; then
+				echo "-A INPUT -p tcp -m tcp --dport $ports -j ACCEPT" >> /etc/iptables/iptables.rules
+			else
+				echo "Port already allowed"
+			fi
+		counter=$((counter+1))
+		done
+		echo "COMMIT" >> /etc/iptables/iptables.rules
+	else
+		echo "No ports to allow"
+		echo "COMMIT" >> /etc/iptables/iptables.rules
+	fi
+}
+
+dnat_nat () {
+	counter=1
+	if [ -n "$destination_ips" ]; then
+		printf "*nat\n:PREROUTING ACCEPT\n:INPUT ACCEPT\n:OUTPUT ACCEPT\n:POSTROUTING ACCEPT\n" >> /etc/iptables/iptables.rules
+		set $destiny_port
+		for ip in $(echo $destination_ips); do
+			if [ "$counter" != '1' ]; then
+			echo "-A PREROUTING -i $public_interface -p tcp -m tcp --dport $source -j DNAT --to-destination $ip:$1" >> /etc/iptables/iptables.rules
+			else
+				counter1=1
+				for port in $(echo $source_port); do
+					if [ "$counter" == '1' ]; then
+						echo "-A PREROUTING -i $public_interface -p tcp -m tcp --dport $port -j DNAT --to-destination $ip:$1" >> /etc/iptables/iptables.rules
+					fi
+				counter1=$((counter1+1))
+				done
+		source=$port
+			fi
+		counter1=$((counter1+1))
+		shift
+		done
+		echo "COMMIT" >> /etc/iptables/iptables.rules
+	else
+		"No ips to nat"
+	fi
+}
+
+dnat_filter
