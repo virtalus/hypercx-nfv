@@ -93,9 +93,6 @@ EOF
 	add_automatic_ping
 	start_ipsec
 
-	else
-		echo "No parameters found"
-	fi
 else
 	echo "VPN ipsec program is not isntalled"
 fi
