@@ -53,7 +53,7 @@ save_default_config () {
 }
 
 s2s_vpn () {
-if [ -n "$remote_site_ip" ] && [ -n "$remote_networks" ]; then	
+if [ -n "$remote_site_ip" ] && [ -n "$remote_networks" ] && [ -n "$pre_shared_key" ]; then	
 		stop_ipsec
 		if [ -f /etc/ipsec.conf.bk ]; then
 			echo "Files already saved"
