@@ -28,7 +28,7 @@ stop_nginx () {
 }
 
 gen_sites () {
-	if [ -n "$backend" ]; then
+	if [ -n "$backend" ] && [ -n "$Site_name" ]; then
 		stop_nginx
 		echo "LOAD BALANCER L7 ENABLED." >> /etc/motd
 		echo "#Prx" >> /etc/nginx/sites-available/reverse.conf
