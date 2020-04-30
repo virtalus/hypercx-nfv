@@ -47,19 +47,10 @@ restart_ipsec () {
 	ipsec restart
 }
 
-save_default_config () {
-	mv /etc/ipsec.conf /etc/ipsec.conf.bk
-	mv /etc/ipsec.secrets /etc/ipsec.secrets.bk
-}
-
 s2s_vpn () {
 if [ -n "$remote_site_ip" ] && [ -n "$remote_networks" ] && [ -n "$pre_shared_key" ]; then	
 		stop_ipsec
-		if [ -f /etc/ipsec.conf.bk ]; then
-			echo "Files already saved"
-		else
-			save_default_config
-		fi
+		echo "S2S VPN ENABLED" >> /etc/motd
 		cat > /etc/ipsec.conf <<EOF
 # HyperCX IPsec configuration file
 
@@ -88,13 +79,14 @@ conn VPN
        	auto=start
 EOF
 
-	add_networks 
+	echo "Remote Public IP: $remote_site_ip" >> /etc/motd
+	dd_networks 
 	add_key
 	add_automatic_ping
 	start_ipsec
 
 else
-	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found."
+	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found." >> /etc/motd
 fi
 }
 
@@ -120,30 +112,15 @@ done
 }
 
 add_key () {
-	if [ -f /etc/ipsec.secrets ]; then
-		rm -f /etc/ipsec.secrets
-		echo " $(cat /root/public) $remote_site_ip : PSK "$pre_shared_key" " >> /etc/ipsec.secrets
-	else
-		echo " $(cat /root/public) $remote_site_ip : PSK "$pre_shared_key" " >> /etc/ipsec.secrets
-	fi
+	echo " $(cat /root/public) $remote_site_ip : PSK "$pre_shared_key" " > /etc/ipsec.secrets
 	rm -f /root/public
 }
 
 add_automatic_ping () {
 	if [ -n "$automatically_ping_host" ]; then
-	crontab -l > mycron
-	input=mycron
-	while IFS= read -r line; do
-		if [ "$line"  = "*/1 * * * * /bin/ping -c 10 $automatically_ping_host" ]; then
-			temp=1
-		fi
-	done < "$input"
-
-	if [ "$temp" != '1' ]; then	
 		echo "*/1 * * * * /bin/ping -c 10 $automatically_ping_host" >> mycron
 		crontab mycron
 		rm -f mycron
-	fi
 	fi
 }
 
@@ -159,18 +136,15 @@ while IFS= read -r nic; do
 done <<< $(env | grep -E "^ETH[1-9]+_MAC" | cut -d '_' -f 1)
 }
 
-echo "=========================OPENVPN========================" >> /etc/motd
+get_first_interface_ipv4() {
+    env | grep -E "^ETH0+_IP=" | cut -d '=' -f 2
+}
+
+echo "=========================S2S VPN========================" >> /etc/motd
 if [ -n "${ETH0_MAC}" ]; then
-    if [ -n "${ETH0_VROUTER_IP}" ]; then
         ipv4="$(get_first_interface_floating_ipv4)"
         ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
-    else
-        ipv4="$(get_first_interface_ipv4)"
-        ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
-    fi
     if [ -z "${ipv4_private}" ]; then
-        	echo "S2S VPN ENABLED." >> /etc/motd
-		echo "Remote Site IP: $remote_site_ip" /etc/motd
         	echo "$ipv4" >> /root/public
 		s2s_vpn
     else
