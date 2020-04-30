@@ -1,0 +1,156 @@
+#!/bin/sh
+
+# -------------------------------------------------------------------------- #
+# Copyright 2010-2016, OpenNebula Systems                                    #
+#                                                                            #
+# Licensed under the Apache License, Version 2.0 (the "License"); you may    #
+# not use this file except in compliance with the License. You may obtain    #
+# a copy of the License at                                                   #
+#                                                                            #
+# http://www.apache.org/licenses/LICENSE-2.0                                 #
+#                                                                            #
+# Unless required by applicable law or agreed to in writing, software        #
+# distributed under the License is distributed on an "AS IS" BASIS,          #
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   #
+# See the License for the specific language governing permissions and        #
+# limitations under the License.                                             #
+#--------------------------------------------------------------------------- #
+
+remote_site_ip="$S2S_REMOTE_SITE_IP"
+remote_networks="$S2S_REMOTE_NETWORKS"
+
+pre_shared_key="$S2S_PRE_SHARED_KEY"
+
+p1_algorithm=aes
+p1_key_length=256
+p1_hash=sha2_256
+p1_dh_group=1024
+p1_lifetime=28800
+
+p2_algorithm=aes
+p2_key_length=256
+p2_hash=sha2_256
+p2_dh_group=
+p2_lifetime=3600
+
+automatically_ping_host="$S2S_HOST_TO_PING"
+
+start_ipsec () {
+    ipsec start
+}
+
+stop_ipsec () {
+    ipsec stop
+}
+
+restart_ipsec () {
+	ipsec restart
+}
+
+s2s_vpn () {
+if [ -n "$remote_site_ip" ] && [ -n "$remote_networks" ] && [ -n "$pre_shared_key" ]; then	
+		stop_ipsec
+		echo "S2S VPN ENABLED" >> /etc/motd
+		cat > /etc/ipsec.conf <<EOF
+# HyperCX IPsec configuration file
+
+# basic configuration
+
+config setup
+	strictcrlpolicy=no
+        uniqueids = yes
+        charondebug="all"
+
+# VPN Connections
+
+conn VPN
+	authby=secret
+	left=%defaultroute
+       	leftid=$(cat /root/public)
+      	rightid=$remote_site_ip 
+        ike=$p1_algorithm$p1_key_length-$p1_hash-modp$p1_dh_group!
+        esp=$p2_algorithm$p2_key_length-$p2_hash$p2_dh_group!
+        keyingtries=0
+        ikelifetime=$p2_lifetime
+        lifetime=$p1_lifetime
+       	dpddelay=30
+       	dpdtimeout=120
+       	dpdaction=restart
+       	auto=start
+EOF
+
+	echo "Remote Public IP: $remote_site_ip" >> /etc/motd
+	dd_networks 
+	add_key
+	add_automatic_ping
+	start_ipsec
+
+else
+	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found." >> /etc/motd
+fi
+}
+
+add_networks () {
+counter=1
+for ip in $(echo $remote_networks); do
+	if [ "$counter" != '1' ]; then
+		echo "# More remote networks" >> /etc/ipsec.conf
+		echo "conn VPN_$counter" >> /etc/ipsec.conf
+		echo "	also=VPN" >> /etc/ipsec.conf
+		echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+		echo "Remote network $counter: $ip" >> /etc/motd
+	else
+		get_local_networks
+		networks=cat /root/net | tr -s ' ' | cut -d ' ' -f 2 | tr '\n' ',' | sed 's/,$//'
+		echo "	leftsubnet=$networks" >> /etc/ipsec.conf	
+		echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+		echo "Remote network $counter: $ip" >> /etc/motd
+		rm -f /root/net
+	fi
+	counter=$((counter+1))
+done
+}
+
+add_key () {
+	echo " $(cat /root/public) $remote_site_ip : PSK "$pre_shared_key" " > /etc/ipsec.secrets
+	rm -f /root/public
+}
+
+add_automatic_ping () {
+	if [ -n "$automatically_ping_host" ]; then
+		echo "*/1 * * * * /bin/ping -c 10 $automatically_ping_host" >> mycron
+		crontab mycron
+		rm -f mycron
+	fi
+}
+
+get_local_networks () {
+while IFS= read -r nic; do
+    ipv4=$(env | grep -E "^$nic+_IP=" | cut -d '=' -f 2)
+    mask=$(env | grep -E "^$nic+_MASK=" | cut -d '=' -f 2)
+    if [ -n "${ipv4}" ] && [ -n "${mask}" ]; then
+        ipv4_net_addr=$(ipcalc $ipv4 $mask | grep Network | awk '{print $2}')
+        echo "Local network: $ipv4_net_addr" >> /etc/motd
+        echo "$ipv4_net_addr" >> /root/net
+    fi
+done <<< $(env | grep -E "^ETH[1-9]+_MAC" | cut -d '_' -f 1)
+}
+
+get_first_interface_ipv4() {
+    env | grep -E "^ETH0+_IP=" | cut -d '=' -f 2
+}
+
+echo "=========================S2S VPN========================" >> /etc/motd
+if [ -n "${ETH0_MAC}" ]; then
+        ipv4="$(get_first_interface_floating_ipv4)"
+        ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+    if [ -z "${ipv4_private}" ]; then
+        	echo "$ipv4" >> /root/public
+		s2s_vpn
+    else
+        echo "S2S VPN DISABLED. ETH0 found using a private IP ." >> /etc/motd
+    fi
+else
+    echo "S2S VPN DISABLED. NO ETH0 MAC." >> /etc/motd
+fi
+
