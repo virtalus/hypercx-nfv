@@ -1,0 +1,285 @@
+#!/bin/bash -x
+
+
+get_local_ip()
+{
+    extif=$(ip r | awk '{if ($1 == "default") print $5;}')
+    local_ip=$(ip a show dev "$extif" | \
+        awk '{if ($1 == "inet") print $2;}' | sed -e '/^127\./d' -e 's#/.*##')
+
+    echo "${local_ip:-localhost}"
+}
+
+start_kubelet()
+{
+    systemctl daemon-reload
+    systemctl start kubelet
+}
+
+wait_for_k8s()
+{
+# kubectl works only on the master node - we don't have config on the worker
+_ready=''
+counter=0
+while [ "$_ready" != Ready ] && [ $counter != "200" ] ; do
+    _ready=$(LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf \
+        get nodes --no-headers | awk '{print $2}' | sort -u)
+    let "counter=counter+1"
+    sleep 1s
+done
+
+if [ $counter = "200" ]; then
+    report_log "Critical Failure. Timeout reached while waiting for master node to be ready."
+    exit 1
+fi
+
+_healthy=''
+counter=0
+while [ "$_healthy" != Healthy ] && [ $counter != "200" ]; do
+    _healthy=$(LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf \
+        get componentstatus --no-headers | awk '{print $2}' | sort -u)
+    let "counter=counter+1"
+    sleep 1s
+done
+
+if [ $counter = "200" ]; then
+    report_log "Critical Failure. Timeout reached while waiting for all component on master node to start."
+    exit 1
+fi
+
+return 0
+}
+
+create_service_account()
+{
+    cat > /opt/hcx_k8s/kubernetes-service-account.yaml <<EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ${K8S_ADMIN_USERNAME}
+  namespace: kubernetes-dashboard
+EOF
+
+    cat > /opt/hcx_k8s/kubernetes-cluster-role.yaml <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ${K8S_ADMIN_USERNAME}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: ${K8S_ADMIN_USERNAME}
+  namespace: kubernetes-dashboard
+EOF
+
+    LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /opt/hcx_k8s/kubernetes-service-account.yaml
+    LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /opt/hcx_k8s/kubernetes-cluster-role.yaml
+    echo "Kubernetes Username: ${K8S_ADMIN_USERNAME}" >> /etc/motd
+}
+
+report_log()
+{
+    echo $1 >> /etc/motd
+    onegate vm update --data LOG=\""$1"\" || true
+}
+
+print_ui_login_token()
+{
+    counter=0
+    while [ -z "$_secret" ] && [ $counter != "200" ]; do
+        _secret=$(LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kubernetes-dashboard get secret \
+            | grep "^${K8S_ADMIN_USERNAME}-token" \
+            | awk '{print $1}')
+        let "counter=counter+1"
+        sleep 1s
+    done
+
+    if [ $counter = "200" ]; then
+        report_log "Critical Failure. Secret was not obtained."
+        exit 1
+    fi
+
+    _token=$(LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kubernetes-dashboard describe secret "$_secret" \
+        | awk '{if ($1 == "token:") print $2}')
+
+    # let's test that the output was longer than 32 chars which is a good bet
+    # that it really is a token and not a word - k8s use 800+ long tokens
+    if echo "$_token" | grep -q '^[^[:space:]]\{32,\}$' ; then
+        echo "$_token"
+    else
+        #echo "Failed to get a token for login to the UI dashboard. Terminating" >> /etc/motd
+        report_log "Critical Failure. Failed to get a token for the web dashboard. Terminating"
+        exit 1
+    fi
+}
+
+K8S_ADMIN_USERNAME="${K8S_ADMIN_USERNAME:-admin-user}"
+
+
+######## Get onegate parameters
+master=false
+vm_id=$(onegate vm show --json | jq -cr ".VM.ID") || true
+
+# VM_ID must be a number. If not, onegate failed and this standalone instance will be a master
+if ! echo "$vm_id" | grep -q '^[0-9]\+$' ; then
+         #echo "This instance is not configured as a Service. Configuring as master in standalone mode." >> /etc/motd
+         report_log "This instance is not configured as a Service - Configuring as master in standalone mode"
+         master=true
+fi
+
+####### TODO: Fix next line
+service_id=$(onegate service show --json | jq -cr '.SERVICE.id') || true
+
+if ! echo "$service_id" | grep -q '^[0-9]\+$' ; then
+         #echo "This instance is not part of a Service Cluster. Configuring as master in standalone mode." >> /etc/motd
+         report_log "This instance is not part of a Service Cluster - Configuring as master in standalone mode"
+         master=true
+fi
+
+# Get the smallest VM ID from master service,if id matches vm id then onegate is working and this is the master
+master_vm_id=$(onegate service show --json | jq -cr '.SERVICE.roles[] | select(.name == "master") | {id: .nodes[] | .vm_info.VM.ID} | .[]' | sort -un | head -n 1) || true
+
+if [ "$vm_id" = "$master_vm_id" ]; then
+    #echo "This instance is the master instance on the Kubernetes cluster. Configuring..." >> /etc/motd
+    report_log "This instance is the master instance on the Kubernetes cluster. Configuring..."
+    master=true
+fi
+
+k8s_token=$(onegate vm show $master_vm_id --json | jq -cr ".VM.USER_TEMPLATE.K8S_TOKEN") || true
+k8s_hash=$(onegate vm show $master_vm_id --json | jq -cr ".VM.USER_TEMPLATE.K8S_HASH") || true
+k8s_master_ip=$(onegate vm show $master_vm_id --json | jq -cr ".VM.USER_TEMPLATE.K8S_MASTER_IP") || true
+
+###########TODO: FIGURE OUT THE CLUSTER_IP PARAMETER
+# If this is a master, configure kubernetes cluster from scratch
+if [ "$master" = "true" ]; then
+
+    if [ -z "$k8s_token" ] || [ -z "$k8s_hash" ] || [ -z "$k8s_master_ip" ] || [ $k8s_token = "null" ] || [ $k8s_hash = "null" ] || [ $k8s_master_ip = "null" ]; then
+
+        systemctl stop kubelet || true
+        cluster_ip=$(get_local_ip)
+        cat >> /etc/systemd/system/kubelet.service.d/10-kubeadm.conf <<EOF
+[Service]
+Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+Environment="KUBELET_EXTRA_ARGS=--node-ip=${cluster_ip} --fail-swap-on=false"
+EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+EnvironmentFile=-/etc/default/kubelet
+ExecStart=
+ExecStart=/usr/bin/kubelet \$KUBELET_KUBECONFIG_ARGS \$KUBELET_CONFIG_ARGS \$KUBELET_KUBEADM_ARGS \$KUBELET_EXTRA_ARGS
+EOF
+        #echo "K8S_TOKEN, K8S_HASH and/or K8S_MASTER_IP missing from VM template. Bootstrapping cluster..." >> /etc/motd
+        report_log "K8S_TOKEN K8S_HASH and/or K8S_MASTER_IP missing from VM template. Bootstrapping cluster..." 
+
+        start_kubelet
+
+        # Initialize kubernetes cluster
+        kubeadm init --pod-network-cidr=10.244.0.0/16 --token-ttl 0 --skip-token-print  --apiserver-advertise-address "$cluster_ip" --ignore-preflight-errors=Swap,SystemVerification
+
+        # Configure 
+        mkdir -p /root/.kube
+        cp /etc/kubernetes/admin.conf /root/.kube/config
+
+
+        # Install CANAL
+        LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /opt/hcx_k8s/canal.yaml
+
+        # Wait for everything to be up and running
+        _healthy=''
+        while [ "$_healthy" != Healthy ] ; do
+            _healthy=$(LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf \
+                get componentstatus --no-headers | awk '{print $2}' | sort -u)
+            sleep 1s
+        done
+
+        wait_for_k8s
+
+        # Deploy pods on master node
+        LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf taint nodes --all node-role.kubernetes.io/master-
+
+        # Install dashboard
+        LANG=C kubectl apply --kubeconfig=/etc/kubernetes/admin.conf -f /opt/hcx_k8s/kubernetes-dashboard.yaml
+
+        create_service_account
+        login_token=$(print_ui_login_token)
+
+        # Get hash and token
+        master_hash=$(openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //')
+        master_token=$(kubeadm token list | grep -vi ^TOKEN | awk '{print $1}')
+
+        _status=''
+        counter=0
+        while [ "$_status" != Running ] && [ $counter != "200" ]; do
+            _status=$(LANG=C kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kubernetes-dashboard get pods | grep kubernetes-dashboard | awk '{print $3}')
+            let "counter=counter+1"
+            sleep 1s
+        done
+
+        if [ $counter = "200" ]; then
+            report_log "Critical Failure. Kubernetes Dashboard was not able to switch to Running state."
+            exit 1
+        fi
+
+        # Start kubelet remote web portal
+        systemctl start k8s-dashboard-access
+
+        # Install metrics-server
+        kubectl --kubeconfig=/etc/kubernetes/admin.conf create -f /opt/hcx_k8s/metrics-server/deploy/kubernetes/
+
+        # Publish hash and token
+        onegate vm update --data K8S_HASH="$master_hash" || true
+        onegate vm update --data K8S_TOKEN="$master_token" || true
+        onegate vm update --data K8S_MASTER_IP="$cluster_ip" || true
+        onegate vm update --data K8S_WEB_USERNAME="${K8S_ADMIN_USERNAME}" || true
+        onegate vm update --data K8S_WEB_LOGIN_TOKEN="$login_token" || true
+
+
+        echo "Kubernetes HASH: $master_hash" >> /etc/motd
+        echo "Kubernetes Token: $master_token" >> /etc/motd
+        echo "Kubernetes Master IP: $cluster_ip" >> /etc/motd
+        echo "Kubernetes Web Login Token: $login_token" >> /etc/motd
+        echo "Kubernetes join command: kubeadm join ${cluster_ip}:6443 --token $master_token --discovery-token-ca-cert-hash sha256:${master_hash}" >> /etc/motd
+
+        report_log "READY. Master successfully bootstrapped."
+
+    else
+        start_kubelet
+
+        # Start kubelet remote web portal
+        systemctl start k8s-dashboard-access
+
+        #echo "K8S_TOKEN, K8S_HASH and K8S_MASTER_IP found on VM template. Cluster already configured." >> /etc/motd
+        report_log "READY. K8S_TOKEN, K8S_HASH and K8S_MASTER_IP found on VM template. Cluster already configured."
+    fi
+else
+    echo "Kubernetes cluster SLAVE instance detected" >> /etc/motd
+    if [ -z "$k8s_token" ] || [ -z "$k8s_hash" ] || [ -z "$k8s_master_ip" ]; then
+        #echo "K8S_TOKEN, K8S_HASH and/or K8S_MASTER_IP missing from VM template. This instance will not be configured" >> /etc/motd
+        report_log "ERROR. K8S_TOKEN K8S_HASH and/or K8S_MASTER_IP missing from VM template on a slave instance. This instance will not be configured."
+    else
+        #echo "K8S_TOKEN, K8S_HASH and K8S_MASTER_IP detected on VM template. Adding slave instance to cluster..." >> /etc/motd
+        report_log "K8S_TOKEN, K8S_HASH and K8S_MASTER_IP detected on VM template. Adding slave instance to cluster..."
+        systemctl stop kubelet || true
+        local_ip=$(get_local_ip)
+        cat >> /etc/systemd/system/kubelet.service.d/10-kubeadm.conf <<EOF
+[Service]
+Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+Environment="KUBELET_EXTRA_ARGS=--node-ip=${local_ip}"
+EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+EnvironmentFile=-/etc/default/kubelet
+ExecStart=
+ExecStart=/usr/bin/kubelet \$KUBELET_KUBECONFIG_ARGS \$KUBELET_CONFIG_ARGS \$KUBELET_KUBEADM_ARGS \$KUBELET_EXTRA_ARGS
+EOF
+        start_kubelet
+        kubeadm join "${k8s_master_ip}":6443 --token "$k8s_token" --discovery-token-ca-cert-hash "sha256:${k8s_hash}"
+
+        report_log "READY. SLAVE instance was added to cluster."
+    fi
+fi
+
+
+
+
