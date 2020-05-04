@@ -66,7 +66,7 @@ config setup
 conn VPN
 	authby=secret
 	left=%defaultroute
-       	leftid=$(get_first_interface_floating_ipv4)
+       	leftid=$(cat /root/public)
       	rightid=$remote_site_ip 
         ike=$p1_algorithm$p1_key_length-$p1_hash-modp$p1_dh_group!
         esp=$p2_algorithm$p2_key_length-$p2_hash$p2_dh_group!
@@ -80,6 +80,7 @@ conn VPN
 EOF
 
 	echo "Remote Public IP: $remote_site_ip" >> /etc/motd
+	echo "Local Public IP: $(cat /root/public)" >> /etc/motd
 	add_networks 
 	add_key
 	add_automatic_ping
@@ -101,19 +102,17 @@ for ip in $(echo $remote_networks); do
 		echo "Remote network $counter: $ip" >> /etc/motd
 	else
 		get_local_networks
-		networks=cat /root/net | tr -s ' ' | cut -d ' ' -f 2 | tr '\n' ',' | sed 's/,$//'
-		echo "	leftsubnet=$networks" >> /etc/ipsec.conf	
+		networks="$(cat /root/net | tr -s ' ' | cut -d ' ' -f 2 | tr '\n' ',' | sed 's/,$//')"
+		echo "	leftsubnet=$networks" >> /etc/ipsec.conf
 		echo "	rightsubnet=$ip" >> /etc/ipsec.conf
 		echo "Remote network $counter: $ip" >> /etc/motd
-		rm -f /root/net
 	fi
 	counter=$((counter+1))
 done
 }
 
 add_key () {
-	echo " $(get_first_interface_floating_ipv4) $remote_site_ip : PSK "$pre_shared_key" " > /etc/ipsec.secrets
-	rm -f /root/public
+	echo " $(cat /root/public) $remote_site_ip : PSK "$pre_shared_key" " > /etc/ipsec.secrets
 }
 
 add_automatic_ping () {
@@ -122,9 +121,14 @@ add_automatic_ping () {
 		crontab mycron
 		rm -f mycron
 	fi
+	rm -f /root/net
+	rm -f /root/public
+	rm -f /root/enviroment
 }
 
 get_local_networks () {
+env | grep -E "*ETH[1-9]+_MAC" | cut -d '_' -f 1 >> /root/enviroment
+input=/root/enviroment
 while IFS= read -r nic; do
     ipv4=$(env | grep -E "^$nic+_IP=" | cut -d '=' -f 2)
     mask=$(env | grep -E "^$nic+_MASK=" | cut -d '=' -f 2)
@@ -133,7 +137,7 @@ while IFS= read -r nic; do
         echo "Local network: $ipv4_net_addr" >> /etc/motd
         echo "$ipv4_net_addr" >> /root/net
     fi
-done < "$(env | grep -E "^ETH[1-9]+_MAC" | cut -d '_' -f 1)"
+done < "$input"
 }
 
 get_first_interface_ipv4() {
@@ -142,7 +146,7 @@ get_first_interface_ipv4() {
 
 echo "=========================S2S VPN========================" >> /etc/motd
 if [ -n "${ETH0_MAC}" ]; then
-        ipv4="$(get_first_interface_floating_ipv4)"
+        ipv4="$(get_first_interface_ipv4)"
         ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
     if [ -z "${ipv4_private}" ]; then
         	echo "$ipv4" >> /root/public
