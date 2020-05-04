@@ -133,7 +133,7 @@ while IFS= read -r nic; do
         echo "Local network: $ipv4_net_addr" >> /etc/motd
         echo "$ipv4_net_addr" >> /root/net
     fi
-done <<< $(env | grep -E "^ETH[1-9]+_MAC" | cut -d '_' -f 1)
+done < "$(env | grep -E "^ETH[1-9]+_MAC" | cut -d '_' -f 1)"
 }
 
 get_first_interface_ipv4() {
