@@ -66,7 +66,7 @@ config setup
 conn VPN
 	authby=secret
 	left=%defaultroute
-       	leftid=$(cat /root/public)
+       	leftid=$(get_first_interface_floating_ipv4)
       	rightid=$remote_site_ip 
         ike=$p1_algorithm$p1_key_length-$p1_hash-modp$p1_dh_group!
         esp=$p2_algorithm$p2_key_length-$p2_hash$p2_dh_group!
@@ -80,7 +80,7 @@ conn VPN
 EOF
 
 	echo "Remote Public IP: $remote_site_ip" >> /etc/motd
-	dd_networks 
+	add_networks 
 	add_key
 	add_automatic_ping
 	start_ipsec
@@ -112,7 +112,7 @@ done
 }
 
 add_key () {
-	echo " $(cat /root/public) $remote_site_ip : PSK "$pre_shared_key" " > /etc/ipsec.secrets
+	echo " $(get_first_interface_floating_ipv4) $remote_site_ip : PSK "$pre_shared_key" " > /etc/ipsec.secrets
 	rm -f /root/public
 }
 

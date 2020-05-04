@@ -62,7 +62,7 @@ add_backends () {
 	echo "LOAD BALANCER L7 SITE NAME: $Site_name" >> /etc/motd
 	echo "upstream backends {" >> /etc/nginx/sites-available/reverse.conf	
 	for ip in $(echo $backend); do
-		echo "        server $ip max_fails=1 fail_timeout=5;" >> /etc/nginx/sites-available/reverse.conf
+		echo "        server $ip max_fails=1 fail_timeout=3;" >> /etc/nginx/sites-available/reverse.conf
 		echo "LOAD BALANCER L7 BACKEND $counter: $ip" >> /etc/motd
         counter=$((counter+1))
     done
@@ -74,7 +74,7 @@ enable_site () {
 }
 
 add_certificate () {
-	/usr/local/letsencrypt/./letsencrypt-auto --nginx -d $Site_name --non-interactive --agree-tos -m 123@gmail.com
+	/usr/local/letsencrypt/./letsencrypt-auto --nginx -d $Site_name --non-interactive --agree-tos --register-unsafely-without-email
 
 	echo "0 1 1 */2 * cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --nginx --renew-by-default --nginx -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" >> mycron
 		crontab mycron
