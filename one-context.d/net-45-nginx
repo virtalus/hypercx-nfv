@@ -76,9 +76,8 @@ enable_site () {
 add_certificate () {
 	/usr/local/letsencrypt/./letsencrypt-auto --nginx -d $Site_name --non-interactive --agree-tos -m example@gmail.com
 
-	echo "0 1 1 */2 * cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --nginx --renew-by-default --nginx -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" >> mycron
-		crontab mycron
-		rm -f mycron
+	echo "#!/bin/sh" > /root/nginx.sh
+	echo "cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --nginx --renew-by-default --nginx -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" >> /root/nginx.sh 
 }
 
 echo "=========================LOAD_BALANCER_L7========================" >> /etc/motd
