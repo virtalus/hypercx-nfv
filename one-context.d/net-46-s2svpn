@@ -117,12 +117,12 @@ add_key () {
 
 add_automatic_ping () {
 	if [ -n "$automatically_ping_host" ]; then
-		echo "#!/bin/sh" > /root/s2svpn.sh
-		echo "/bin/ping -c 10 $automatically_ping_host" >> /root/s2svpn.sh
+		echo "#!/bin/sh" > /opt/hypercx-nfv/s2svpn.sh
+		echo "/bin/ping -c 10 $automatically_ping_host" >> /opt/hypercx-nfv/s2svpn.sh
 	else
-		echo "#!/bin/sh" > /root/s2svpn.sh
+		echo "#!/bin/sh" > /opt/hypercx-nfv/s2svpn.sh
 	fi
-	echo "/usr/sbin/ipsec start" >> /root/s2svpn.sh
+	echo "/usr/sbin/ipsec start" >> /opt/hypercx-nfv/s2svpn.sh
 	rm -f /root/net
 	rm -f /root/public
 	rm -f /root/enviroment
