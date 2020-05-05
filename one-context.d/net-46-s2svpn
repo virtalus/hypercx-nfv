@@ -21,17 +21,17 @@ remote_networks="$S2S_REMOTE_NETWORKS"
 
 pre_shared_key="$S2S_PRE_SHARED_KEY"
 
-p1_algorithm=aes
-p1_key_length=256
-p1_hash=sha2_256
-p1_dh_group=1024
-p1_lifetime=28800
+#p1_algorithm=aes
+#p1_key_length=256
+#p1_hash=sha2_256
+#p1_dh_group=1024
+#p1_lifetime=28800
 
-p2_algorithm=aes
-p2_key_length=256
-p2_hash=sha2_256
-p2_dh_group=
-p2_lifetime=3600
+#p2_algorithm=aes
+#p2_key_length=256
+#p2_hash=sha2_256
+#p2_dh_group=
+#p2_lifetime=3600
 
 automatically_ping_host="$S2S_HOST_TO_PING"
 
@@ -44,7 +44,7 @@ stop_ipsec () {
 }
 
 restart_ipsec () {
-	ipsec restart
+	systemctl restart strongswan
 }
 
 s2s_vpn () {
@@ -65,14 +65,14 @@ config setup
 
 conn VPN
 	authby=secret
-	left=%defaultroute
-       	leftid=$(cat /root/public)
-      	rightid=$remote_site_ip 
-        ike=$p1_algorithm$p1_key_length-$p1_hash-modp$p1_dh_group!
-        esp=$p2_algorithm$p2_key_length-$p2_hash$p2_dh_group!
+      	left=%defaultroute
+	leftid=$(cat /root/public)
+      	right=$remote_site_ip
+        ike=aes256-sha2_256-modp1024!
+        esp=aes256-sha2_256!
         keyingtries=0
-        ikelifetime=$p2_lifetime
-        lifetime=$p1_lifetime
+        ikelifetime=1h
+        lifetime=8h
        	dpddelay=30
        	dpdtimeout=120
        	dpdaction=restart
@@ -85,7 +85,7 @@ EOF
 	add_key
 	add_automatic_ping
 	start_ipsec
-
+	restart_ipsec
 else
 	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found." >> /etc/motd
 fi
@@ -117,10 +117,12 @@ add_key () {
 
 add_automatic_ping () {
 	if [ -n "$automatically_ping_host" ]; then
-		echo "*/1 * * * * /bin/ping -c 10 $automatically_ping_host" >> mycron
-		crontab mycron
-		rm -f mycron
+		echo "#!/bin/sh" > /opt/hypercx-nfv/s2svpn.sh
+		echo "/bin/ping -c 10 $automatically_ping_host" >> /opt/hypercx-nfv/s2svpn.sh
+	else
+		echo "#!/bin/sh" > /opt/hypercx-nfv/s2svpn.sh
 	fi
+	echo "/usr/sbin/ipsec start" >> /opt/hypercx-nfv/s2svpn.sh
 	rm -f /root/net
 	rm -f /root/public
 	rm -f /root/enviroment
