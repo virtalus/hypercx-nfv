@@ -4,6 +4,7 @@
 
 ```
 mkdir -p /etc/openvpn/pki
+sed -i 's/^.*set_var EASYRSA_CRL_DAYS.*/        set_var EASYRSA_CRL_DAYS        3650/' /etc/openvpn/easy_rsa/easyrsa
 /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch init-pki
 dd if=/dev/urandom of=/etc/openvpn/pki/.rnd bs=256 count=1
 /etc/openvpn/easy_rsa/easyrsa --pki-dir=/etc/openvpn/pki --batch build-ca nopass
