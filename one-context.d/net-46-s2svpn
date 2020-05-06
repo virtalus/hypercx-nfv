@@ -81,6 +81,7 @@ EOF
 
 	echo "Remote Public IP: $remote_site_ip" >> /etc/motd
 	echo "Local Public IP: $(cat /root/public)" >> /etc/motd
+	get_local_networks
 	add_networks 
 	add_key
 	add_automatic_ping
@@ -93,21 +94,39 @@ fi
 
 add_networks () {
 counter=1
+networks="$(cat /root/net | tr -s ' ' | cut -d ' ' -f 2 | tr '\n' ' ' | sed 's/,$//')"
 for ip in $(echo $remote_networks); do
-	if [ "$counter" != '1' ]; then
-		echo "# More remote networks" >> /etc/ipsec.conf
-		echo "conn VPN_$counter" >> /etc/ipsec.conf
-		echo "	also=VPN" >> /etc/ipsec.conf
-		echo "	rightsubnet=$ip" >> /etc/ipsec.conf
-		echo "Remote network $counter: $ip" >> /etc/motd
-	else
-		get_local_networks
-		networks="$(cat /root/net | tr -s ' ' | cut -d ' ' -f 2 | tr '\n' ',' | sed 's/,$//')"
-		echo "	leftsubnet=$networks" >> /etc/ipsec.conf
-		echo "	rightsubnet=$ip" >> /etc/ipsec.conf
-		echo "Remote network $counter: $ip" >> /etc/motd
-	fi
-	counter=$((counter+1))
+	counter1=1
+	for net in $(echo $networks); do
+		if [ "$counter" != '1' ] && [ "$counter1" != '1' ]; then
+			echo "# More remote networks" >> /etc/ipsec.conf
+			echo "conn VPN_"$counter1"_$counter" >> /etc/ipsec.conf
+			echo "	also=VPN" >> /etc/ipsec.conf
+			echo "	leftsubnet=$net" >> /etc/ipsec.conf
+			echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+
+		elif [ "$counter" != '1' ] && [ "$counter1" = '1' ]; then
+                        echo "# More remote networks" >> /etc/ipsec.conf
+                        echo "conn VPN_"$counter1"_$counter" >> /etc/ipsec.conf
+                        echo "	also=VPN" >> /etc/ipsec.conf
+                        echo "	leftsubnet=$net" >> /etc/ipsec.conf
+                        echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+                        echo "Remote network $counter: $ip" >> /etc/motd
+
+		elif [ "$counter" = '1' ] && [ "$counter1" != '1' ]; then
+                        echo "# More remote networks" >> /etc/ipsec.conf
+                        echo "conn VPN_"$counter1"_$counter" >> /etc/ipsec.conf
+                        echo "	also=VPN" >> /etc/ipsec.conf
+                        echo "	leftsubnet=$net" >> /etc/ipsec.conf
+                        echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+		else	
+				echo "	leftsubnet=$net" >> /etc/ipsec.conf
+				echo "	rightsubnet=$ip" >> /etc/ipsec.conf
+				echo "Remote network $counter: $ip" >> /etc/motd
+		fi
+	counter1=$((counter1+1))
+done
+counter=$((counter+1))
 done
 }
 
@@ -146,10 +165,19 @@ get_first_interface_ipv4() {
     env | grep -E "^ETH0+_IP=" | cut -d '=' -f 2
 }
 
+get_first_interface_floating_ipv4() {
+    env | grep -E "^ETH0+_VROUTER_IP=" | cut -d '=' -f 2
+}
+
 echo "=========================S2S VPN========================" >> /etc/motd
 if [ -n "${ETH0_MAC}" ]; then
+	if [ -n "${ETH0_VROUTER_IP}" ]; then
+        ipv4="$(get_first_interface_floating_ipv4)"
+        ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+    else
         ipv4="$(get_first_interface_ipv4)"
         ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+    fi
     if [ -z "${ipv4_private}" ]; then
         	echo "$ipv4" >> /root/public
 		s2s_vpn
