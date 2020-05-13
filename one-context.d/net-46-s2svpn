@@ -87,6 +87,7 @@ EOF
 	add_automatic_ping
 	start_ipsec
 	restart_ipsec
+	iptables -t nat -I POSTROUTING -m policy --pol ipsec --dir out -j ACCEPT
 else
 	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found." >> /etc/motd
 fi
