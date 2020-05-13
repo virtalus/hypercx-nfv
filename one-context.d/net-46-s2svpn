@@ -87,7 +87,6 @@ EOF
 	add_automatic_ping
 	start_ipsec
 	restart_ipsec
-	iptables -t nat -I POSTROUTING -m policy --pol ipsec --dir out -j ACCEPT
 else
 	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found." >> /etc/motd
 fi
@@ -139,8 +138,11 @@ add_automatic_ping () {
 	if [ -n "$automatically_ping_host" ]; then
 		echo "#!/bin/sh" > /opt/hypercx-nfv/s2svpn.sh
 		echo "/bin/ping -c 10 $automatically_ping_host" >> /opt/hypercx-nfv/s2svpn.sh
+		echo "/sbin/iptables -t nat -I POSTROUTING -m policy --pol ipsec --dir out -j ACCEPT" >> /opt/hypercx-nfv/s2svpn.sh
 	else
 		echo "#!/bin/sh" > /opt/hypercx-nfv/s2svpn.sh
+		echo "/sbin/iptables -t nat -I POSTROUTING -m policy --pol ipsec --dir out -j ACCEPT" >> /opt/hypercx-nfv/s2
+svpn.sh
 	fi
 	echo "/usr/sbin/ipsec start" >> /opt/hypercx-nfv/s2svpn.sh
 	rm -f /root/net
