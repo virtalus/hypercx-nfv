@@ -72,10 +72,21 @@ EOF
 }
 
 add_certificate () {
-	if [ -n "$Site_name" ]; then
-		/usr/local/letsencrypt/./letsencrypt-auto --apache -d $Site_name --non-interactive --agree-tos -m example@gmail.com
-		echo "#!/bin/sh" > /opt/whmcs/whmcs_cert.sh
-		echo "cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --apache --renew-by-default --apache -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" >> /opt/whmcs/whmcs_cert.sh 
+	if [ -n "${ETH0_IP}" ]; then
+		ipv4="$(get_first_interface_ipv4)"
+		ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+	fi
+	if [ -z "${ipv4_private}" ]; then
+		if [ -n "$Site_name" ]; then
+			/usr/local/letsencrypt/./letsencrypt-auto --apache -d $Site_name --non-interactive --agree-tos -m example@gmail.com || echo "FAiled certificate" >> /etc/motd
+			echo "#!/bin/sh" > /opt/whmcs/whmcs_cert.sh
+			echo "cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --apache --renew-by-default --apache -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" >> /opt/whmcs/whmcs_cert.sh 
+			echo "ETH0 found using a public IP. A certificate will be generated since a Site Name was found." >> /etc/motd
+		else
+			echo "ETH0 found using a public IP. No certificate will be configured as the Site name was not detected." >> /etc/motd
+		fi
+	else
+		echo "ETH0 found using a private IP. WHMCS will be configured without certificate." >> /etc/motd
 	fi
 
 }
@@ -99,15 +110,5 @@ get_first_interface_ipv4() {
 
 echo "========================= WHMCS ========================" >> /etc/motd
 if [ -n "${ETH0_MAC}" ]; then
-	if [ -n "${ETH0_IP}" ]; then
-        ipv4="$(get_first_interface_ipv4)"
-        ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
-	fi
-    if [ -z "${ipv4_private}" ]; then
-	    whmcs
-	    echo "WHMCS will be configured"
-    else
-        echo "ETH0 found using a private IP. WHMCS will be configured without certificate." >> /etc/motd
-	whmcs
-    fi
+    whmcs
 fi
