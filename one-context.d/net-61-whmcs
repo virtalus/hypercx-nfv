@@ -27,6 +27,7 @@ restart_mysql () {
 }
 
 whmcs () {
+	install_db
 	ioncube
         site
         add_certificate
@@ -99,6 +100,13 @@ finish_install () {
         echo "  rm -rf /var/www/whmcs/install" >> /opt/whmcs/finish_install.sh
         echo "  systemctl restart apache2" >> /opt/whmcs/finish_install.sh
         echo "fi" >> /opt/whmcs/finish_install.sh
+}
+
+install_db () {
+	if [ -n /opt/whmcs/install_db.sh ]; then
+		/opt/whmcs/./install_db.sh
+		rm -f /opt/whmcs/install_db.sh
+	fi
 }
 
 get_first_interface_ipv4() {
