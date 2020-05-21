@@ -49,7 +49,7 @@ site () {
 cat > /etc/apache2/sites-available/000-default.conf <<EOF
 <VirtualHost *:80>
 
-	ServerAdmin $Site_name
+	ServerAdmin whmcs@example.com
 	DocumentRoot /var/www/whmcs/
 	
 	<Directory /var/www/whmcs/>
@@ -92,16 +92,13 @@ add_certificate () {
 }
 
 finish_install () {
-cat > vim /opt/whmcs/finish_install.sh <<EOF
-	#!/bin/sh
-
-	ip=$(cat /var/run/one-context/one_env | grep -E "ETH0+_IP=" | cut -d '=' -f 2 | cut -d '"' -f 2)
-	page=$(curl -s http://$ip | grep -E 'Welcome to WHMCS!' | awk '{print $1'} | cut -b 8-14)
-	if [ "$page" != "Welcome" ]; then
-		rm -rf /var/www/whmcs/install
-		systemctl restart apache2
-	fi
-EOF
+        echo "#!/bin/sh" > /opt/whmcs/finish_install.sh
+        echo "ip=$(cat /var/run/one-context/one_env | grep -E "ETH0+_IP=" | cut -d '=' -f 2 | cut -d '"' -f 2)" >> /opt/whmcs/finish_install.sh
+        echo 'page=$(curl -s http://$ip | grep -E 'Welcome to WHMCS' | awk '{print $1'} | cut -b 8-14)' >> /opt/whmcs/finish_install.sh
+        echo 'if [ "$page" != "Welcome" ]; then' >> /opt/whmcs/finish_install.sh
+        echo "  rm -rf /var/www/whmcs/install" >> /opt/whmcs/finish_install.sh
+        echo "  systemctl restart apache2" >> /opt/whmcs/finish_install.sh
+        echo "fi" >> /opt/whmcs/finish_install.sh
 }
 
 get_first_interface_ipv4() {
