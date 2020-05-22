@@ -71,7 +71,6 @@ EOF
 	echo "WHMCS DB NAME: whmcsdb" >> /etc/motd
 	echo "WHMCS DB USER: whmcs" >> /etc/motd
 	echo "WHMCS DB PASSWORD: $pass" >> /etc/motd
-	rm -f /opt/whmcs/pass
 }
 
 add_certificate () {
