@@ -106,6 +106,7 @@ finish_install () {
 install_db () {
 	if [ -n /opt/whmcs/install_db.sh ]; then
 		/opt/whmcs/./install_db.sh
+		rm -f /opt/whmcs/install_db.sh
 	fi
 }
 
