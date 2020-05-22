@@ -99,7 +99,7 @@ finish_install () {
 	echo "page=\$(curl -s http://\$ip | grep -E "Before" | awk '{print \$4}' | cut -b 15-20)" >> /opt/whmcs/finish_install.sh
         echo 'if [ "$page" != "Before" ]; then' >> /opt/whmcs/finish_install.sh
         echo "  rm -rf /var/www/whmcs/install" >> /opt/whmcs/finish_install.sh
-	echo '	chmod 400 /var/www/whmcs/configuration.php' >> /opt/whmcs/finish_install.sh
+	echo '	chmod 755 /var/www/whmcs/configuration.php' >> /opt/whmcs/finish_install.sh
         echo "  systemctl restart apache2" >> /opt/whmcs/finish_install.sh
         echo "fi" >> /opt/whmcs/finish_install.sh
 }
