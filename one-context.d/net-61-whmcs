@@ -66,10 +66,12 @@ cat > /etc/apache2/sites-available/000-default.conf <<EOF
 </VirtualHost>
 EOF
 	restart_apache
+	pass=$(cat /opt/whmcs/pass)
 	echo "To finish the installation go to http://$(get_first_interface_ipv4)/install/install.php" >> /etc/motd
 	echo "WHMCS DB NAME: whmcsdb" >> /etc/motd
 	echo "WHMCS DB USER: whmcs" >> /etc/motd
-	echo "WHMCS DB PASSWORD: +5g6ijn4IBinaIsfbK0=" >> /etc/motd
+	echo "WHMCS DB PASSWORD: $pass" >> /etc/motd
+	rm -f /opt/whmcs/pass
 }
 
 add_certificate () {
