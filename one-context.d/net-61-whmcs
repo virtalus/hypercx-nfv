@@ -31,7 +31,7 @@ whmcs () {
 	ioncube
         site
         add_certificate
-        finish_install
+        #finish_install
 }
 
 ioncube () {
