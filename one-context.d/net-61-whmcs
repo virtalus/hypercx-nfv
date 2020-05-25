@@ -31,7 +31,6 @@ whmcs () {
 	ioncube
         site
         add_certificate
-        #finish_install
 }
 
 ioncube () {
@@ -91,19 +90,6 @@ add_certificate () {
 		echo "ETH0 found using a private IP. WHMCS will be configured without certificate." >> /etc/motd
 	fi
 
-}
-
-finish_install () {
-        echo "#!/bin/sh" > /opt/whmcs/finish_install.sh
-        echo "ip=$(cat /var/run/one-context/one_env | grep -E "ETH0+_IP=" | cut -d '=' -f 2 | cut -d '"' -f 2)" >> /opt/whmcs/finish_install.sh
-	echo "page=\$(curl -s http://\$ip | grep -E "Before" | awk '{print \$4}' | cut -b 15-20)" >> /opt/whmcs/finish_install.sh
-        echo 'if [ "$page" != "Before" ]; then' >> /opt/whmcs/finish_install.sh
-	echo '	if [ -d /var/www/whmcs/install ]; then' >> /opt/whmcs/finish_install.sh
-        echo "  		rm -rf /var/www/whmcs/install" >> /opt/whmcs/finish_install.sh
-	echo '		chmod 755 /var/www/whmcs/configuration.php' >> /opt/whmcs/finish_install.sh
-        echo "  		systemctl restart apache2" >> /opt/whmcs/finish_install.sh
-	echo "	fi" >> /opt/whmcs/finish_install.sh
-        echo "fi" >> /opt/whmcs/finish_install.sh
 }
 
 install_db () {
