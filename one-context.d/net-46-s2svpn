@@ -21,6 +21,7 @@ remote_networks="$S2S_REMOTE_NETWORKS"
 
 pre_shared_key="$S2S_PRE_SHARED_KEY"
 
+VMID="$(cat /var/run/one-context/one_env | grep -E "VMID" | tr '\n' ' ' | cut -d '"' -f 2)"
 #p1_algorithm=aes
 #p1_key_length=256
 #p1_hash=sha2_256
@@ -51,6 +52,9 @@ s2s_vpn () {
 if [ -n "$remote_site_ip" ] && [ -n "$remote_networks" ] && [ -n "$pre_shared_key" ]; then	
 		stop_ipsec
 		echo "S2S VPN ENABLED" >> /etc/motd
+		onegate vm update $VMID --data S2S_VPN_STATUS=ENABLED
+		cp /etc/ipsec.conf /etc/ipsec.conf.bk
+		cp /etc/ipsec.secrets /etc/ipsec.secrets.bk
 		cat > /etc/ipsec.conf <<EOF
 # HyperCX IPsec configuration file
 
@@ -80,16 +84,57 @@ conn VPN
 EOF
 
 	echo "Remote Public IP: $remote_site_ip" >> /etc/motd
+	ip="$(cat /var/run/one-context/one_env | grep -E "S2S_REMOTE_SITE_IP" | cut -d '"' -f 2)"
+	onegate vm update $VMID --data S2S_REMOTE_SITE_IP=$ip
 	echo "Local Public IP: $(cat /root/public)" >> /etc/motd
 	get_local_networks
 	add_networks 
 	add_key
 	add_automatic_ping
-	start_ipsec
-	restart_ipsec
+	check_changes
 else
 	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found." >> /etc/motd
+	onegate vm update $VMID --data S2S_VPN=Remote_Site_parameters_not_found.
+	onegate vm update $VMID --data S2S_VPN_STATUS=DISABLED
 fi
+}
+
+check_changes () {
+	file1="/etc/ipsec.conf"
+	file2="/etc/ipsec.conf.bk"
+	file3="/etc/ipsec.secrets"
+        file4="/etc/ipsec.secrets.bk"
+
+	if cmp -s "$file1" "$file2"; then
+		if cmp -s "$file3" "$file4"; then
+			echo "No modification needed" >> /etc/motd
+			onegate vm update $VMID --data S2S_VPN_Notification=No_modification_needed.
+			rm -f /etc/ipsec.conf.bk
+			rm -f /etc/ipsec.secrets.bk
+		else
+			echo "A change was detected in the file ipsec.secrets and it will be modified" >> /etc/motd
+			onegate vm update $VMID --data S2S_VPN_Notification=ipsec.secrets_will_be_modified.
+			start_ipsec
+			restart_ipsec
+			rm -f /etc/ipsec.conf.bk
+			rm -f /etc/ipsec.secrets.bk
+		fi
+	elif cmp -s "$file3" "$file4"; then
+		echo "A change was detected in the file ipsec.conf and it will be modified" >> /etc/motd
+		onegate vm update $VMID --data S2S_VPN_Notification=ipsec.conf_will_be_modified.
+		start_ipsec
+		restart_ipsec
+		rm -f /etc/ipsec.conf
+		rm -f /etc/ipsec.secrets.bk
+	else
+		echo "A change was detected in the files ipsec.conf&ipsec.secrets and they will be modified" >> /etc/motd
+		onegate vm update $VMID --data S2S_VPN_Notification=ipsec.conf_and_ipsec.secrets_will_be_modified.
+                start_ipsec
+                restart_ipsec
+                rm -f /etc/ipsec.conf
+                rm -f /etc/ipsec.secrets.bk
+	fi
+
 }
 
 add_networks () {
@@ -185,8 +230,12 @@ if [ -n "${ETH0_MAC}" ]; then
 		s2s_vpn
     else
         echo "S2S VPN DISABLED. ETH0 found using a private IP ." >> /etc/motd
+	onegate vm update $VMID --data S2S_VPN=ETH0_found_using_a_private_IP.
+	onegate vm update $VMID --data S2S_VPN_STATUS=DISABLED
     fi
 else
     echo "S2S VPN DISABLED. NO ETH0 MAC." >> /etc/motd
+    onegate vm update $VMID --data S2S_VPN=NO_ETH0
+    onegate vm update $VMID --data S2S_VPN_STATUS=DISABLED
 fi
 
