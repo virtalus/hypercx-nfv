@@ -32,7 +32,7 @@ gen_sites () {
 	if [ -n "$backend" ] && [ -n "$Site_name" ]; then
 		stop_nginx
 		echo "LOAD BALANCER L7 ENABLED." >> /etc/motd
-		onegate vm update $VMID --data L7_LB_STATUS=ENABLED || exit 0
+		onegate vm update $VMID --data L7_LB_STATUS=ENABLED 2>/dev/null
 		echo "#Prx" >> /etc/nginx/sites-available/reverse.conf
 		cp /etc/nginx/sites-available/reverse.conf /etc/nginx/sites-available/reverse.conf.bk
 		cat > /etc/nginx/sites-available/reverse.conf <<EOF
@@ -56,9 +56,9 @@ EOF
 
 	else
 		echo "LOAD BALANCER DISABLED." >> /etc/motd
-		onegate vm update $VMID --data L7_LB_STATUS=DISABLED || exit 0
+		onegate vm update $VMID --data L7_LB_STATUS=DISABLED 2>/dev/null
 		echo "Load Balancer L7 SITE_NAME and BACKEND variables were not found" >> /etc/motd
-		onegate vm update $VMID --data L7_LB_INFO=Parameters_were_not_found. || exit 0
+		onegate vm update $VMID --data L7_LB_INFO=Parameters_were_not_found. 2>/dev/null
 	fi
 }
 
@@ -68,10 +68,10 @@ check_changes () {
 
         if cmp -s "$nginx_config" "$previous_nginx_config"; then
 		echo "No modification needed" >> /etc/motd
-		onegate vm update $VMID --data L7_LB_INFO=No_modification_needed. || exit 0
+		onegate vm update $VMID --data L7_LB_INFO=No_modification_needed. 2>/dev/null
         else
                 echo "A change was detected in the proxy configuration file and it will be modified" >> /etc/motd
-                onegate vm update $VMID --data L7_LB_INFO=Proxy_configuration_file_will_be_modified. || exit 0
+                onegate vm update $VMID --data L7_LB_INFO=Proxy_configuration_file_will_be_modified. 2>/dev/null
                 start_nginx
                 systemctl restart nginx
         fi
@@ -98,10 +98,10 @@ add_certificate () {
 	site="$(nslookup $Site_name | grep -E "Name")"
 	if -n "$site"; then
 		echo "A certificate will be configured" >> /etc/motd
-		onegate vm update $VMID --data L7_LB_INFO=A_certificate_will_be_configured. || exit 0
+		onegate vm update $VMID --data L7_LB_INFO=A_certificate_will_be_configured. 2>/dev/null
 	else
 		echo "The specified DNS entry was not found so the certificate was not configured." >> /etc/motd
-		onegate vm update $VMID --data L7_LB_INFO=The_specified_DNS_entry_was_not_found_so_the_certificate_was_not_configured. || exit 0
+		onegate vm update $VMID --data L7_LB_INFO=The_specified_DNS_entry_was_not_found_so_the_certificate_was_not_configured. 2>/dev/null
 	fi
 
 	/usr/local/letsencrypt/./letsencrypt-auto --nginx -d $Site_name --non-interactive --agree-tos -m example@gmail.com
