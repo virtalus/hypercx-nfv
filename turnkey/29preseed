@@ -6,6 +6,7 @@
 MASTERPASS=$(mcookie | cut --bytes 1-8)
 
 cat>$INITHOOKS_CONF<<EOF
+export ROOT_PASS=$MASTERPASS
 export DB_PASS=$MASTERPASS
 export APP_PASS=$MASTERPASS
 export APP_EMAIL=admin@example.com
