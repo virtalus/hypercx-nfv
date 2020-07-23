@@ -96,7 +96,7 @@ enable_site () {
 
 add_certificate () {
 	site="$(nslookup $Site_name | grep -E "Name")"
-	if -n "$site"; then
+	if [ -n "$site" ]; then
 		echo "A certificate will be configured" >> /etc/motd
 		onegate vm update $VMID --data L7_LB_INFO=A_certificate_will_be_configured. 2>/dev/null
 	else
@@ -104,10 +104,10 @@ add_certificate () {
 		onegate vm update $VMID --data L7_LB_INFO=The_specified_DNS_entry_was_not_found_so_the_certificate_was_not_configured. 2>/dev/null
 	fi
 
-	/usr/local/letsencrypt/./letsencrypt-auto --nginx -d $Site_name --non-interactive --agree-tos -m example@gmail.com
-
+	certbot --nginx -d mine.virtalus.com --redirect --non-interactive --agree-tos -m example@gmail.com
+	
 	echo "#!/bin/sh" > /opt/hypercx-nfv/nginx.sh
-	echo "cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --nginx --renew-by-default --nginx -d $Site_name >> /var/log/($Site_name)-renew.log 2>&1" >> /opt/hypercx-nfv/nginx.sh 
+	echo "cerboot renew" >> /opt/hypercx-nfv/nginx.sh 
 }
 
 echo "=========================LOAD_BALANCER_L7========================" >> /etc/motd
