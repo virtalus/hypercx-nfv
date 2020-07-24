@@ -1,0 +1,64 @@
+<html>
+<head>
+  <title>HyperCX Initialization required</title>
+  <link href="/style.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+  <h1>Please initialize this system...</h1>
+
+  <p>Welcome to your new TurnKey appliance running in Virtalus HyperCX! You need to 
+  initialize this system first before you can use it. To do that you'll need to log 
+  into the root account via SSH or through VNC using the root password defined when 
+  instantiating this VM (if any). After login in, this screen will be shown:
+
+  <img src="/appliance-services.png" />
+
+  This illustrates the available services in the appliance, but they are locked for
+  the moment, until the appliance is initialized. Quit that dialog box and the 
+  initialization process will start automatically:</p>
+
+  <img src="/turnkey-init.png" />
+
+  <p>Note: It is recommended to use an ssh connection, configuration setup might not 
+  be displayed properly when using the VNC.</p>
+
+  <p>After initialization try reloading this page. This message will disappear and 
+  you'll be able to access all services on this system  normally.</p>
+
+  <h2>Can I log in without SSH?</h2>
+
+  <p>Yes, you can use the VNC console if a root password was defined when 
+  instantiating the VM</p>
+
+  <h2>How do I log in via SSH?</h2>
+
+  <p>If you are connecting from Linux or MacOS, please open your terminal app and type
+  the command:</p>
+
+  <pre id="p1">ssh example</pre>
+
+  <p>If you are connecting from Windows, you will need to install an SSH client, such 
+  as <a href="https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html">PuTTY</a>.
+  Then connect to: <strong id="p2">IP ADDRESS OR FQDN</strong></p>
+
+  <p>Note: you will need your SSH keys configured in your user settings or in the template
+  through the HyperCX web portal before instantiating this VM. If you set a root password, 
+  you will not be able to use it via ssh for security reasons.</p>
+
+  <h2>For more information, visit our website!</h2>
+
+  <p>For further information regarding this appliance, please consult the <a href="https://www.turnkeylinux.org/">appliance page</a> 
+  on the <a href="https://www.turnkeylinux.org">TurnKey GNU/Linux</a> website.
+  For more information regarding the VM and ssh settings, check </p> <a href="https://docs.virtalus.com/">Virtalus documentation</a>.
+
+</body>
+</html>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+<script>
+    document.getElementById("p1").innerHTML = "ssh root@" + document.domain;
+    document.getElementById("p2").innerHTML = document.domain;
+</script>
+<script src="https://ajax.turnkeylinux.org/initfence/iso/16.0-buster-amd64/lamp.js" async></script>
+<script src="https://ajax.turnkeylinux.org/initfence/iso/16.0-buster-amd64/lamp.direct" async></script>

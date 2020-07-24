@@ -1,0 +1,17 @@
+[Unit]
+Description=Port forward that allows to remotely connect to Kubernetes dashboard
+After=multi-user.target
+
+[Service]
+Type=simple
+Group=root
+User=root
+ExecStart=/usr/bin/kubectl --kubeconfig=/etc/kubernetes/admin.conf port-forward -n kubernetes-dashboard --address 0.0.0.0     service/kubernetes-dashboard 10443:443
+StartLimitInterval=60
+StartLimitBurst=3
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

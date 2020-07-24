@@ -1,0 +1,109 @@
+#!/bin/sh
+
+# -------------------------------------------------------------------------- #
+# Copyright 2010-2016, OpenNebula Systems                                    #
+#                                                                            #
+# Licensed under the Apache License, Version 2.0 (the "License"); you may    #
+# not use this file except in compliance with the License. You may obtain    #
+# a copy of the License at                                                   #
+#                                                                            #
+# http://www.apache.org/licenses/LICENSE-2.0                                 #
+#                                                                            #
+# Unless required by applicable law or agreed to in writing, software        #
+# distributed under the License is distributed on an "AS IS" BASIS,          #
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   #
+# See the License for the specific language governing permissions and        #
+# limitations under the License.                                             #
+#--------------------------------------------------------------------------- #
+
+Site_name=$SITE_NAME
+
+restart_apache () {
+	systemctl restart apache2
+}
+
+restart_mysql () {
+	systemctl restart mysql
+}
+
+whmcs () {
+	install_db
+	ioncube
+        site
+        add_certificate
+}
+
+ioncube () {
+	php -i | grep extension_dir > /opt/exten
+	dir="$(cat /opt/exten | tr -s ' ' | cut -d '>' -f 2 | cut -d ' ' -f 2)"
+	cp -a /opt/ioncube/ioncube_loader_lin_7.2.so $dir
+	echo "zend_extension=$dir/ioncube_loader_lin_7.2.so" >> /etc/php/7.2/cli/php.ini
+	for i in cli apache2 cgi fpm; do 
+		echo "zend_extension=ioncube_loader_lin_7.2.so" > "/etc/php/7.2/$i/conf.d/00-ioncube-loader.ini"
+	done
+	restart_apache
+	rm -f /opt/exten
+}
+
+site () {
+cat > /etc/apache2/sites-available/000-default.conf <<EOF
+<VirtualHost *:80>
+
+	ServerAdmin whmcs@example.com
+	DocumentRoot /var/www/whmcs/
+	
+	<Directory /var/www/whmcs/>
+		DirectoryIndex index.php
+       	Options +FollowSymLinks
+		AllowOverride All
+		Require all granted
+	</Directory>
+
+	ErrorLog ${APACHE_LOG_DIR}/error.log
+	CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+</VirtualHost>
+EOF
+	restart_apache
+	pass=$(cat /opt/whmcs/pass)
+	echo "To finish the installation go to http://$(get_first_interface_ipv4)/install/install.php" >> /etc/motd
+	echo "WHMCS DB NAME: whmcsdb" >> /etc/motd
+	echo "WHMCS DB USER: whmcs" >> /etc/motd
+	echo "WHMCS DB PASSWORD: $pass" >> /etc/motd
+}
+
+add_certificate () {
+	if [ -n "${ETH0_IP}" ]; then
+		ipv4="$(get_first_interface_ipv4)"
+		ipv4_private="$(echo $ipv4 | grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)')"
+	fi
+	if [ -z "${ipv4_private}" ]; then
+		if [ -n "$Site_name" ]; then
+			/usr/local/letsencrypt/./letsencrypt-auto --apache -d $Site_name --non-interactive --agree-tos -m example@gmail.com || echo "FAiled certificate" >> /etc/motd
+			echo "#!/bin/sh" > /opt/whmcs/whmcs_cert.sh
+			echo "cd /usr/local/letsencrypt && ./letsencrypt-auto certonly --apache --renew-by-default --apache -d $Site_name >> /var/log/'$Site_name'-renew.log 2>&1" >> /opt/whmcs/whmcs_cert.sh 
+			echo "ETH0 found using a public IP. A certificate will be generated since a Site Name was found." >> /etc/motd
+		else
+			echo "ETH0 found using a public IP. No certificate will be configured as the Site name was not detected." >> /etc/motd
+		fi
+	else
+		echo "ETH0 found using a private IP. WHMCS will be configured without certificate." >> /etc/motd
+	fi
+
+}
+
+install_db () {
+	if [ -n /opt/whmcs/install_db.sh ]; then
+		/opt/whmcs/./install_db.sh
+		rm -f /opt/whmcs/install_db.sh
+	fi
+}
+
+get_first_interface_ipv4() {
+    env | grep -E "^ETH0+_IP=" | cut -d '=' -f 2
+}
+
+echo "========================= WHMCS ========================" >> /etc/motd
+if [ -n "${ETH0_MAC}" ]; then
+    whmcs
+fi
