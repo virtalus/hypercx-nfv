@@ -1,0 +1,103 @@
+#!/bin/bash
+OPENVPN_STATUS=$(systemctl status openvpn@server | grep 'Active:' | awk '{print $3}' | grep 'running' | wc -l)
+HAPROXY_STATUS=$(systemctl status haproxy | grep 'Active:' | awk '{print $3}' | grep 'running' | wc -l)
+KEEPALIVED_STATUS=$(systemctl status keepalived | grep 'Active:' | awk '{print $3}' | grep 'running' | wc -l)
+NGINX_STATUS=$(systemctl status nginx | grep 'Active:' | awk '{print $3}' | grep 'running' | wc -l)
+NGINX_DEFAULTS=$(ls /etc/nginx/sites-enabled/ | grep default | wc -l)
+EASY_RSA_ALREADY_INSTALLED=$(ls -l /etc/openvpn/ | grep "easy_rsa" | wc -l)
+PKI_ALREADY_INSTALLED=$(ls -l /etc/openvpn/ | grep pki | wc -l)
+DH2048_EXISTENCE=$(ls -l /etc/openvpn/ | grep "dh2048.pem" | wc -l)
+TA_KEY_EXISTENCE=$(ls -l /etc/openvpn/ | grep "ta.key" | wc -l)
+CHECK_USER_CREDENTIALS_EXISTENCE=$(ls -l /etc/openvpn/ | grep "check_user_credentials.sh" | wc -l)
+CRON_TASKS_EXISTENCE=$(crontab -l | grep "nginx.sh\|s2svpn.sh" | wc -l)
+
+if [ $OPENVPN_STATUS -gt 0 ]
+  then
+   systemctl start openvpn@server
+  else
+   systemctl stop openvpn@server
+fi
+
+if [ $HAPROXY_STATUS -gt 0 ]
+  then
+   systemctl start haproxy
+  else
+   systemctl stop haproxy
+fi
+
+if [ $KEEPALIVED_STATUS -gt 0 ]
+  then
+   systemctl start keepalived
+  else
+   systemctl stop keepalived
+fi
+
+if [ $NGINX_STATUS -gt 0 ]
+  then
+   systemctl start nginx
+  else
+   systemctl stop nginx
+fi
+
+
+if [ $NGINX_DEFAULTS -gt 0 ]
+  then
+   unlink /etc/nginx/sites-enabled/default
+fi
+
+
+if [ $EASY_RSA_ALREADY_INSTALLED -eq 0 ]
+  then
+   wget -O /tmp/easyrsa.tgz https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.6/EasyRSA-unix-v3.0.6.tgz
+   mkdir /etc/openvpn/easy_rsa
+   tar -xzf /tmp/easyrsa.tgz -C /etc/openvpn/easy_rsa/ --strip-components=1
+   sed -i 's/^.*set_var EASYRSA_CRL_DAYS.*/        set_var EASYRSA_CRL_DAYS        3650/' /etc/openvpn/easy_rsa/easyrsa
+fi
+
+if [ $PKI_ALREADY_INSTALLED -eq 0 ]
+  then
+   wget -O /tmp/pki.tar.gz https://github.com/virtalus/hypercx-nfv/raw/master/openvpn/pki.tar.gz
+   tar -xzf /tmp/pki.tar.gz -C /etc/openvpn/
+   chown -R root:root /etc/openvpn/pki
+fi
+
+if [ $DH2048_EXISTENCE -eq 0 ]
+  then
+   wget -O /etc/openvpn/dh2048.pem https://raw.githubusercontent.com/virtalus/hypercx-nfv/master/openvpn/dh2048.pem
+   chown root:root /etc/openvpn/dh2048.pem
+   chmod 600 /etc/openvpn/dh2048.pem
+fi
+
+if [ $TA_KEY_EXISTENCE -eq 0 ]
+  then
+   wget -O /etc/openvpn/ta.key https://raw.githubusercontent.com/virtalus/hypercx-nfv/master/openvpn/ta.key
+   chown root:root /etc/openvpn/ta.key
+   chmod 600 /etc/openvpn/ta.key
+fi
+
+
+if [ $CHECK_USER_CREDENTIALS_EXISTENCE -eq 0 ]
+  then
+   wget -O /etc/openvpn/check_user_credentials.sh https://raw.githubusercontent.com/virtalus/hypercx-nfv/master/openvpn/check_user_credentials.sh
+   chown root:root /etc/openvpn/check_user_credentials.sh
+   chmod 755 /etc/openvpn/check_user_credentials.sh
+fi
+
+chown root:root /etc/one-context.d/*
+chmod 755 /etc/one-context.d/*
+
+
+if [ $CRON_TASKS_EXISTENCE -eq 0 ]
+  then
+   mkdir /opt/hypercx-nfv
+   echo '#!/bin/sh' > /opt/hypercx-nfv/nginx.sh
+   echo 'exit 0' >> /opt/hypercx-nfv/nginx.sh
+   echo '#!/bin/sh' > /opt/hypercx-nfv/s2svpn.sh
+   echo 'exit 0' >> /opt/hypercx-nfv/s2svpn.sh
+   echo '*/1 * * * * /opt/hypercx-nfv/./s2svpn.sh' >> /root/mycron
+   echo '0 1 1 */2 * /opt/hypercx-nfv/./nginx.sh' >> /root/mycron
+   crontab /root/mycron
+   rm -f /root/mycron
+   sleep 1
+   chmod 755 /opt/hypercx-nfv/nginx.sh /opt/hypercx-nfv/s2svpn.sh
+fi

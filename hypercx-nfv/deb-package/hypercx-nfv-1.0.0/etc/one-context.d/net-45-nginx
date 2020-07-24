@@ -1,0 +1,114 @@
+#!/bin/sh
+
+# -------------------------------------------------------------------------- #
+# Copyright 2010-2016, OpenNebula Systems                                    #
+#                                                                            #
+# Licensed under the Apache License, Version 2.0 (the "License"); you may    #
+# not use this file except in compliance with the License. You may obtain    #
+# a copy of the License at                                                   #
+#                                                                            #
+# http://www.apache.org/licenses/LICENSE-2.0                                 #
+#                                                                            #
+# Unless required by applicable law or agreed to in writing, software        #
+# distributed under the License is distributed on an "AS IS" BASIS,          #
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   #
+# See the License for the specific language governing permissions and        #
+# limitations under the License.                                             #
+#--------------------------------------------------------------------------- #
+
+Site_name="$L7_SITE_NAME"
+backend="$L7_BACKENDS"
+VMID="$VMID"
+
+start_nginx () {
+    systemctl start nginx
+}
+
+stop_nginx () {
+    systemctl stop nginx
+}
+
+gen_sites () {
+	if [ -n "$backend" ] && [ -n "$Site_name" ]; then
+		stop_nginx
+		echo "LOAD BALANCER L7 ENABLED." >> /etc/motd
+		onegate vm update $VMID --data L7_LB_STATUS=ENABLED 2>/dev/null
+		echo "#Prx" >> /etc/nginx/sites-available/reverse.conf
+		cp /etc/nginx/sites-available/reverse.conf /etc/nginx/sites-available/reverse.conf.bk
+		cat > /etc/nginx/sites-available/reverse.conf <<EOF
+# $Site_name
+
+server {
+       	listen 80;
+	server_name $Site_name;
+
+       	location / {
+               	proxy_pass http://backends;
+       	}
+}	
+
+EOF
+
+	add_backends 
+	enable_site
+	check_changes
+	add_certificate
+
+	else
+		echo "LOAD BALANCER DISABLED." >> /etc/motd
+		onegate vm update $VMID --data L7_LB_STATUS=DISABLED 2>/dev/null
+		echo "Load Balancer L7 SITE_NAME and BACKEND variables were not found" >> /etc/motd
+		onegate vm update $VMID --data L7_LB_INFO=Parameters_were_not_found. 2>/dev/null
+	fi
+}
+
+check_changes () {
+        nginx_config="/etc/nginx/sites-available/reverse.conf"
+        previous_nginx_config="/etc/nginx/sites-available/reverse.conf.bk"
+
+        if cmp -s "$nginx_config" "$previous_nginx_config"; then
+		echo "No modification needed" >> /etc/motd
+		onegate vm update $VMID --data L7_LB_INFO=No_modification_needed. 2>/dev/null
+        else
+                echo "A change was detected in the proxy configuration file and it will be modified" >> /etc/motd
+                onegate vm update $VMID --data L7_LB_INFO=Proxy_configuration_file_will_be_modified. 2>/dev/null
+                start_nginx
+                systemctl restart nginx
+        fi
+
+}
+
+add_backends () {
+	counter=1
+	echo "LOAD BALANCER L7 SITE NAME: $Site_name" >> /etc/motd
+	echo "upstream backends {" >> /etc/nginx/sites-available/reverse.conf	
+	for ip in $(echo $backend); do
+		echo "        server $ip max_fails=1 fail_timeout=10;" >> /etc/nginx/sites-available/reverse.conf
+		echo "LOAD BALANCER L7 BACKEND $counter: $ip" >> /etc/motd
+        counter=$((counter+1))
+    done
+	echo "}" >> /etc/nginx/sites-available/reverse.conf
+}
+
+enable_site () {
+	ln -s /etc/nginx/sites-available/reverse.conf /etc/nginx/sites-enabled/reverse.conf
+}
+
+add_certificate () {
+	site="$(nslookup $Site_name | grep -E "Name")"
+	if [ -n "$site" ]; then
+		echo "A certificate will be configured" >> /etc/motd
+		onegate vm update $VMID --data L7_LB_INFO=A_certificate_will_be_configured. 2>/dev/null
+	else
+		echo "The specified DNS entry was not found so the certificate was not configured." >> /etc/motd
+		onegate vm update $VMID --data L7_LB_INFO=The_specified_DNS_entry_was_not_found_so_the_certificate_was_not_configured. 2>/dev/null
+	fi
+
+	certbot --nginx -d mine.virtalus.com --redirect --non-interactive --agree-tos -m example@gmail.com
+	
+	echo "#!/bin/sh" > /opt/hypercx-nfv/nginx.sh
+	echo "cerboot renew" >> /opt/hypercx-nfv/nginx.sh 
+}
+
+echo "=========================LOAD_BALANCER_L7========================" >> /etc/motd
+gen_sites
