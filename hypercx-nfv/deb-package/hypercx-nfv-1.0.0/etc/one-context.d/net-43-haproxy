@@ -1,0 +1,110 @@
+#!/bin/bash
+
+start_haproxy()
+{
+    systemctl start haproxy
+}
+
+stop_haproxy()
+{
+    systemctl stop haproxy
+}
+
+configure_haproxy()
+{
+    if [ -n "${LB_BACKENDS}" ] && [ -n "${LB_PORT}" ]; then
+        stop_haproxy
+        echo "LOAD BALANCER ENABLED." >> /etc/motd
+        cat > /etc/haproxy/haproxy.cfg <<EOF
+global
+    log         127.0.0.1 local2
+
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     4000
+    user        haproxy
+    group       haproxy
+    daemon
+
+    stats socket /var/lib/haproxy/stats
+
+defaults
+    mode                    http
+    log                     global
+    option                  httplog
+    option                  dontlognull
+    option http-server-close
+    option forwardfor       except 127.0.0.0/8
+    option                  redispatch
+    retries                 3
+    timeout http-request    10s
+    timeout queue           1m
+    timeout connect         10s
+    timeout client          1m
+    timeout server          1m
+    timeout http-keep-alive 10s
+    timeout check           10s
+    maxconn                 3000
+
+frontend main
+    bind 0.0.0.0:${LB_PORT}
+    stats enable
+    mode http
+    default_backend servers
+
+backend servers
+        mode http
+        stats enable
+        balance roundrobin
+        hash-type consistent
+        option forwardfor
+        option tcp-check
+EOF
+        add_haproxy_backends
+        configure_haproxy_mgmt_auth
+        start_haproxy
+
+    else
+        echo "LOAD BALANCER DISABLED." >> /etc/motd
+	    echo "Load Balancer PORT and BACKEND variables were not found" >> /etc/motd
+    fi
+}
+
+add_haproxy_backends()
+{
+    counter=1
+    port=$LB_PORT
+    for ip in $(echo $LB_BACKENDS); do
+        echo "        server $ip $ip:$port check port $port" >> /etc/haproxy/haproxy.cfg
+        echo "Load Balancer backend $counter: $ip" >> /etc/motd
+        counter=$((counter+1))
+    done
+}
+
+configure_haproxy_mgmt_auth()
+{
+    echo "--------------------------------------------------" >> /etc/motd
+    if [ -n "${LB_USER}" ] && [ -n "${LB_PASSWORD}" ]; then
+        echo "LOAD BALANCER AUTHENTICATION ENABLED" >> /etc/motd 
+        cat >> /etc/haproxy/haproxy.cfg <<EOF
+listen stats
+	bind 0.0.0.0:8989
+        mode http
+        stats enable
+        stats uri /stats
+        stats realm HAProxy\ Statistics
+        stats auth ${LB_USER}:${LB_PASSWORD}
+EOF
+
+        echo "Load Balancer monitoring portal URL: http://server_address:8989/stats" >> /etc/motd
+        echo "Load Balancer monitoring portal user: ${LB_USER}" >> /etc/motd
+        echo "Load Balancer monitoring portal password: ${LB_PASSWORD}" >> /etc/motd
+    else
+        echo "LOAD BALANCER AUTHENTICATION DISABLED. USER and PASSWORD variables were not found" >> /etc/motd 
+    fi
+    echo "--------------------------------------------------" >> /etc/motd
+}
+
+
+echo "=========================LOAD_BALANCER========================" >> /etc/motd
+configure_haproxy

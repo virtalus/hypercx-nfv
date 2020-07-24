@@ -1,0 +1,14 @@
+#!/bin/bash
+IPV4_IP_FORWARD=$(grep -x "net.ipv4.ip_forward=1" /etc/sysctl.conf | wc -l)
+IPV6_IP_FORWARD=$(grep -x "net.ipv6.conf.all.forwarding=1" /etc/sysctl.conf | wc -l)
+
+if [ $IPV4_IP_FORWARD -eq 0 ]
+  then
+   sed -i '/^#net.ipv4.ip_forward=1/s/^#//' /etc/sysctl.conf
+fi
+
+if [ $IPV6_IP_FORWARD -eq 0 ]
+  then
+   sed -i '/^#net.ipv6.conf.all.forwarding=1/s/^#//' /etc/sysctl.conf
+fi
+
