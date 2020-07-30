@@ -1,6 +1,6 @@
 Package: hypercx-nfv
 Version: 2.0.6
-Section: net
+Section: main
 Priority: optional
 Architecture: all
 Depends: keepalived, haproxy, wget, python, openvpn, ipcalc, nginx, strongswan, git, certbot, one-context, python3-certbot-nginx
