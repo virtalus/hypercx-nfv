@@ -50,9 +50,7 @@ server {
 EOF
 
 	add_backends 
-	enable_site
 	check_changes
-	add_certificate
 
 	else
 		echo "LOAD BALANCER DISABLED." >> /etc/motd
@@ -72,6 +70,8 @@ check_changes () {
         else
                 echo "A change was detected in the proxy configuration file and it will be modified" >> /etc/motd
                 onegate vm update $VMID --data L7_LB_INFO=Proxy_configuration_file_will_be_modified. 2>/dev/null
+		enable_site
+		add_certificate
                 start_nginx
                 systemctl restart nginx
         fi
@@ -99,15 +99,14 @@ add_certificate () {
 	if [ -n "$site" ]; then
 		echo "A certificate will be configured" >> /etc/motd
 		onegate vm update $VMID --data L7_LB_INFO=A_certificate_will_be_configured. 2>/dev/null
+		certbot --nginx -d mine.virtalus.com --redirect --non-interactive --agree-tos -m example@gmail.com
+		echo "#!/bin/sh" > /opt/hypercx-nfv/nginx.sh
+		echo "cerboot renew" >> /opt/hypercx-nfv/nginx.sh
 	else
 		echo "The specified DNS entry was not found so the certificate was not configured." >> /etc/motd
 		onegate vm update $VMID --data L7_LB_INFO=The_specified_DNS_entry_was_not_found_so_the_certificate_was_not_configured. 2>/dev/null
 	fi
-
-	certbot --nginx -d mine.virtalus.com --redirect --non-interactive --agree-tos -m example@gmail.com
-	
-	echo "#!/bin/sh" > /opt/hypercx-nfv/nginx.sh
-	echo "cerboot renew" >> /opt/hypercx-nfv/nginx.sh 
+ 
 }
 
 echo "=========================LOAD_BALANCER_L7========================" >> /etc/motd
