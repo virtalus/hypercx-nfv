@@ -53,6 +53,9 @@ if [ -n "$remote_site_ip" ] && [ -n "$remote_networks" ] && [ -n "$pre_shared_ke
 		stop_ipsec
 		echo "S2S VPN ENABLED" >> /etc/motd
 		onegate vm update $VMID --data S2S_VPN_STATUS=ENABLED 2>/dev/null
+		sed -i 's/# install_routes = yes/install_routes = no/g' /etc/strongswan.d/charon.conf
+		cp /opt/hypercx-nfv/remote_networks /opt/hypercx-nfv/remote_networks.bk
+		echo "$remote_networks" > /opt/hypercx-nfv/remote_networks
 		cp /etc/ipsec.conf /etc/ipsec.conf.bk
 		cp /etc/ipsec.secrets /etc/ipsec.secrets.bk
 		cat > /etc/ipsec.conf <<EOF
@@ -79,19 +82,20 @@ conn VPN
         lifetime=8h
        	dpddelay=30
        	dpdtimeout=120
+	mark=42
        	dpdaction=restart
        	auto=start
+	leftsubnet=0.0.0.0/0
+	rightsubnet=0.0.0.0/0
 EOF
 
 	echo "Remote Public IP: $remote_site_ip" >> /etc/motd
 	ip="$(cat /var/run/one-context/one_env | grep -E "S2S_REMOTE_SITE_IP" | cut -d '"' -f 2)"
 	onegate vm update $VMID --data S2S_REMOTE_SITE_IP=$ip 2>/dev/null
 	echo "Local Public IP: $(cat /root/public)" >> /etc/motd
-	get_local_networks
-	add_networks 
-	add_key
-	add_automatic_ping
+	vpn_interface
 	check_changes
+	add_automatic_ping
 else
 	echo "S2S VPN DISABLED. ETH0 found using a public IP but the Remote Site parameters not found." >> /etc/motd
 	onegate vm update $VMID --data S2S_VPN_INFO=Remote_Site_parameters_not_found. 2>/dev/null
@@ -99,72 +103,81 @@ else
 fi
 }
 
+vpn_interface () {
+	ip tunnel add vti0 local $(cat /root/public) remote $remote_site_ip mode vti key 42
+	ip link set vti0 up
+	ip addr add 192.168.253.2/32 dev vti0
+	add_networks
+}
+
 check_changes () {
 	ipsec_config="/etc/ipsec.conf"
 	previous_ipsec_config="/etc/ipsec.conf.bk"
 	ipsec_secrets="/etc/ipsec.secrets"
         previous_ipsec_secrets="/etc/ipsec.secrets.bk"
+	remote_net="/opt/hypercx-nfv/remote_networks"
+	previous_remote_net="/opt/hypercx-nfv/remote_networks.bk"
 
 	if cmp -s "$ipsec_config" "$previous_ipsec_config"; then
 		if cmp -s "$ipsec_secrets" "$previous_ipsec_secrets"; then
-			echo "No modification needed" >> /etc/motd
-			onegate vm update $VMID --data S2S_VPN_INFO=No_modification_needed. 2>/dev/null
+			if cmp -s "$remote_net" "$previous_remote_net"; then
+				echo "No modification needed" >> /etc/motd
+				onegate vm update $VMID --data S2S_VPN_INFO=No_modification_needed. 2>/dev/null
+			else
+				echo "A change was detected in the remote networks and new ones will be added." >> /etc/motd
+				onegate vm update $VMID --data S2S_VPN_INFO=A_change_was_detected_in_the_remote_networks_and_new_ones_will_be_added. 2>/dev/null
+			fi
+		elif cmp -s "$remote_net" "$previous_remote_net"; then
+			echo "A change was detected in the vpn key and it will be updated" >> /etc/motd
+			onegate vm update $VMID --data S2S_VPN_Notification=vpn_key_will_be_updated. 2>/dev/null
+			add_key
+			start_ipsec
+			restart_ipsec
 		else
-			echo "A change was detected in the file ipsec.secrets and it will be modified" >> /etc/motd
-			onegate vm update $VMID --data S2S_VPN_Notification=ipsec.secrets_will_be_modified. 2>/dev/null
+			echo "A change was detected in the vpn key and on remote networks, so the key will be updated and new networks will be added." >> /etc/motd
+			onegate vm update $VMID --data S2S_VPN_Notification=A_change_was_detected_in_the_vpn_key_and_on_remote_networks,_so_the_key_will_be_updated_and_new_networks_will_be_added. 2>/dev/null
+			add_key
 			start_ipsec
 			restart_ipsec
 		fi
 	elif cmp -s "$ipsec_secrets" "$previous_ipsec_secrets"; then
-		echo "A change was detected in the file ipsec.conf and it will be modified" >> /etc/motd
-		onegate vm update $VMID --data S2S_VPN_INFO=ipsec.conf_will_be_modified. 2>/dev/null
-		start_ipsec
-		restart_ipsec
-	else
-		echo "A change was detected in the files ipsec.conf&ipsec.secrets and they will be modified" >> /etc/motd
-		onegate vm update $VMID --data S2S_VPN_INFO=ipsec.conf_and_ipsec.secrets_will_be_modified. 2>/dev/null
+		if cmp -s "$remote_net" "$previous_remote_net"; then
+			echo "A change was detected in the remote site ip and it will be updated" >> /etc/motd
+			onegate vm update $VMID --data S2S_VPN_INFO=remote_site_ip_will_be_updated. 2>/dev/null
+			add_key
+			start_ipsec
+			restart_ipsec
+		else
+			echo "A change was detected in the remote site ip and in the remote networks, so the ip will be updated and the networks will be added." >> /etc/motd
+			onegate vm update $VMID --data S2S_VPN_INFO=A_change_was_detected_in_the_remote_site_ip_and_in_the_remote_networks,_so_the_ip_will_be_updated_and_the_networks_will_be_added. 2>/dev/null
+			add_key
+			start_ipsec
+			restart_ipsec
+		fi
+	elif cmp -s "$remote_net" "$previous_remote_net"; then
+		echo "A change was detected in the remote site ip and it will be updated." >> /etc/motd
+		onegate vm update $VMID --data S2S_VPN_INFO=A_change_was_detected_in_the_remote_site_ip_and_it_will_be_updated. 2>/dev/null
+		add_key
                 start_ipsec
                 restart_ipsec
+	else
+		echo "A change was detected in all vpn parameters and will be updated." >> /etc/motd
+		onegate vm update $VMID --data S2S_VPN_INFO=A_change_was_detected_in_all_vpn_parameters_and_will_be_updated. 2>/dev/null
+		add_key
+		start_ipsec
+		restart_ipsec
 	fi
 
 }
 
 add_networks () {
-counter=1
-networks="$(cat /root/net | tr -s ' ' | cut -d ' ' -f 2 | tr '\n' ' ' | sed 's/,$//')"
-for ip in $(echo $remote_networks); do
-	counter1=1
-	for net in $(echo $networks); do
-		if [ "$counter" != '1' ] && [ "$counter1" != '1' ]; then
-			echo "# More remote networks" >> /etc/ipsec.conf
-			echo "conn VPN_"$counter1"_$counter" >> /etc/ipsec.conf
-			echo "	also=VPN" >> /etc/ipsec.conf
-			echo "	leftsubnet=$net" >> /etc/ipsec.conf
-			echo "	rightsubnet=$ip" >> /etc/ipsec.conf
-
-		elif [ "$counter" != '1' ] && [ "$counter1" = '1' ]; then
-                        echo "# More remote networks" >> /etc/ipsec.conf
-                        echo "conn VPN_"$counter1"_$counter" >> /etc/ipsec.conf
-                        echo "	also=VPN" >> /etc/ipsec.conf
-                        echo "	leftsubnet=$net" >> /etc/ipsec.conf
-                        echo "	rightsubnet=$ip" >> /etc/ipsec.conf
-                        echo "Remote network $counter: $ip" >> /etc/motd
-
-		elif [ "$counter" = '1' ] && [ "$counter1" != '1' ]; then
-                        echo "# More remote networks" >> /etc/ipsec.conf
-                        echo "conn VPN_"$counter1"_$counter" >> /etc/ipsec.conf
-                        echo "	also=VPN" >> /etc/ipsec.conf
-                        echo "	leftsubnet=$net" >> /etc/ipsec.conf
-                        echo "	rightsubnet=$ip" >> /etc/ipsec.conf
-		else	
-				echo "	leftsubnet=$net" >> /etc/ipsec.conf
-				echo "	rightsubnet=$ip" >> /etc/ipsec.conf
-				echo "Remote network $counter: $ip" >> /etc/motd
-		fi
-	counter1=$((counter1+1))
-done
-counter=$((counter+1))
-done
+	counter=1
+	for ip in $(echo $remote_networks); do
+		ip route add $ip dev vti0
+		echo "Remote network $counter: $ip" >> /etc/motd
+		counter=$((counter+1))
+	done
+	get_local_networks
 }
 
 add_key () {
@@ -181,7 +194,6 @@ add_automatic_ping () {
 		echo "/sbin/iptables -t nat -I POSTROUTING -m policy --pol ipsec --dir out -j ACCEPT" >> /opt/hypercx-nfv/s2svpn.sh
 	fi
 	echo "/usr/sbin/ipsec start" >> /opt/hypercx-nfv/s2svpn.sh
-	rm -f /root/net
 	rm -f /root/public
 	rm -f /root/enviroment
 }
@@ -195,7 +207,6 @@ while IFS= read -r nic; do
     if [ -n "${ipv4}" ] && [ -n "${mask}" ]; then
         ipv4_net_addr=$(ipcalc $ipv4 $mask | grep Network | awk '{print $2}')
         echo "Local network: $ipv4_net_addr" >> /etc/motd
-        echo "$ipv4_net_addr" >> /root/net
     fi
 done < "$input"
 }
@@ -230,4 +241,3 @@ else
     onegate vm update $VMID --data S2S_VPN=NO_ETH0 2>/dev/null
     onegate vm update $VMID --data S2S_VPN_STATUS=DISABLED 2>/dev/null
 fi
-
