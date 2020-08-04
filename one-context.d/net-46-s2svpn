@@ -104,9 +104,10 @@ fi
 }
 
 vpn_interface () {
+	ip tunnel del vti0
 	ip tunnel add vti0 local $(cat /root/public) remote $remote_site_ip mode vti key 42
 	ip link set vti0 up
-	ip addr add 192.168.253.2/32 dev vti0
+	ip addr add 192.168.0.1/32 dev vti0
 	add_networks
 }
 
