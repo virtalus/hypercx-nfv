@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # -------------------------------------------------------------------------- #
 # Copyright 2010-2016, OpenNebula Systems                                    #
@@ -16,7 +16,10 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
+source /var/lib/./onegate.sh
+
 Site_name=$SITE_NAME
+VMID="$VMID"
 
 restart_apache () {
 	systemctl restart apache2
@@ -67,6 +70,7 @@ EOF
 	restart_apache
 	pass=$(cat /opt/whmcs/pass)
 	echo "To finish the installation go to http://$(get_first_interface_ipv4)/install/install.php" >> /etc/motd
+	info WHMCS "To finish the installation go to http://$(get_first_interface_ipv4)/install/install.php" WEB_INSTALL 2>/dev/null
 	echo "WHMCS DB NAME: whmcsdb" >> /etc/motd
 	echo "WHMCS DB USER: whmcs" >> /etc/motd
 	echo "WHMCS DB PASSWORD: $pass" >> /etc/motd
@@ -83,11 +87,14 @@ add_certificate () {
 			echo "#!/bin/bash" > /opt/whmcs/whmcs_cert.sh
 			echo "certbot renew" >> /opt/whmcs/whmcs_cert.sh 
 			echo "ETH0 found using a public IP. A certificate will be generated since a Site Name was found." >> /etc/motd
+			status WHMCS "ENABLED. Certificate configured." INFO 2>/dev/null
 		else
 			echo "ETH0 found using a public IP. No certificate will be configured as the Site name was not detected." >> /etc/motd
+			status WHMCS "ENABLED. No certificate configured (Site name was not detected)." INFO 2>/dev/null
 		fi
 	else
 		echo "ETH0 found using a private IP. WHMCS will be configured without certificate." >> /etc/motd
+		status WHMCS "ENABLED. No certificate configured (Not using public IP)." INFO 2>/dev/null
 	fi
 
 }
@@ -105,5 +112,5 @@ get_first_interface_ipv4() {
 
 echo "========================= WHMCS ========================" >> /etc/motd
 if [ -n "${ETH0_MAC}" ]; then
-    whmcs
+	whmcs
 fi
